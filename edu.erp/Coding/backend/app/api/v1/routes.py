@@ -19,6 +19,7 @@ from app.api.v1.cudo_module.program_mode.api.program_mode_api import (
     router as program_mode_router
 )
 
+from app.api.v1.placement_module.contact_api import router as placement_contact_router
 
 router = APIRouter()
 
@@ -43,4 +44,9 @@ router.include_router(
 
 router.include_router(
     department.router, prefix="/department", tags=["EMS-configuration"]
+)
+
+# Include routes for placement module
+router.include_router(
+    placement_contact_router, prefix="/placement/contact", tags=["Placement - Contact"]
 )

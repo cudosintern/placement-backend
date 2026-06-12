@@ -5725,6 +5725,8 @@ class CudosSuTemplateQuestions(Base):
     is_option_type = Column(SmallInteger, default=0)
 
     # Relationships
+
+    # Relationships
     template = relationship("CudosSuTemplate", back_populates="questions")
     options = relationship("CudosSuTemplateQstnOptions", back_populates="question", cascade="all, delete-orphan")
 
@@ -5741,4 +5743,43 @@ class CudosSuTemplateQstnOptions(Base):
 
     # Relationships
     question = relationship("CudosSuTemplateQuestions", back_populates="options")
-    
+
+
+class IEMSPlacementCompany(Base):
+    __tablename__ = 'iems_placement_company'
+
+    company_id = Column(Integer, primary_key=True, autoincrement=True)
+    company_name = Column(String(200), nullable=False)
+    company_sector = Column(String(100), nullable=True)
+    company_website = Column(String(200), nullable=True)
+    company_address = Column(Text, nullable=True)
+    status = Column(TINYINT, default=1)
+    org_id = Column(Integer, nullable=True)
+    created_by = Column(Integer, nullable=True)
+    modified_by = Column(Integer, nullable=True)
+    created_date = Column(DateTime, nullable=True)
+    modified_date = Column(DateTime, nullable=True)
+
+    contacts = relationship("IEMSPlacementContact", back_populates="company", cascade="all, delete-orphan")
+
+
+class IEMSPlacementContact(Base):
+    __tablename__ = 'iems_placement_contact'
+
+    contact_id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey('iems_placement_company.company_id', ondelete='CASCADE'), nullable=False)
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=True)
+    email = Column(String(150), nullable=True)
+    phone = Column(String(20), nullable=True)
+    designation_id = Column(Integer, ForeignKey('iems_user_designation.designation_id'), nullable=True)
+    is_primary = Column(TINYINT, default=0)
+    status = Column(TINYINT, default=1)
+    org_id = Column(Integer, nullable=True)
+    created_by = Column(Integer, nullable=True)
+    modified_by = Column(Integer, nullable=True)
+    created_date = Column(DateTime, nullable=True)
+    modified_date = Column(DateTime, nullable=True)
+
+    company = relationship("IEMSPlacementCompany", back_populates="contacts")
+    designation = relationship("IEMSUserDesignation", foreign_keys=[designation_id])
