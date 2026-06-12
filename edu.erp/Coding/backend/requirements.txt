@@ -4,6 +4,7 @@ pydantic
 uvicorn
 passlib
 mysql-connector-python==9.0.0
+pymysql
 python-jose[cryptography]
 python-dotenv
 pycryptodome
