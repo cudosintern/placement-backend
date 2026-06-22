@@ -24,7 +24,10 @@ from app.api.v1.cudo_module.program_mode.api.program_mode_api import (
 from app.api.v1.placement_module.company.company_api import (
     router as company_router
 )
-from app.api.v1.placement_module.contact_api import router as placement_contact_router
+from app.api.v1.placement_module.contact.contact_api import router as placement_contact_router
+from app.api.v1.placement_module.student.student_profile_api import router as student_profile_router
+from app.api.v1.placement_module.student.student_academic_api import router as student_academic_router
+from app.api.v1.placement_module.student.student_resume_api import router as student_resume_router
 
 router = APIRouter()
 
@@ -39,16 +42,10 @@ router.include_router(login.router, prefix="/staff_student_login", tags=["auth"]
 # Include routes for comman function  module
 router.include_router(comman_function.router, prefix="/comman_function", tags=["auth"])
 
-router.include_router(department.router, prefix="/department", tags=["auth"])
-
-router.include_router(login.router, prefix="/staff_student_login", tags=["Login"])
+router.include_router(department.router, prefix="/department", tags=["EMS-configuration"])
 
 router.include_router(
     program_mode_router, prefix="/program_mode", tags=["Program Mode"]
-)
-
-router.include_router(
-    department.router, prefix="/department", tags=["EMS-configuration"]
 )
 
 # ── Placement Module Routes ───────────────────────────────────────────────────
@@ -75,7 +72,20 @@ router.include_router(
     placement_contact_router, prefix="/placement/contact", tags=["Placement - Contact"]
 )
 
+# Include routes for student profile module
+router.include_router(
+    student_profile_router, prefix="/placement/student_profile", tags=["Placement - Student Profile"]
+)
 
+# Include routes for student academic data module
+router.include_router(
+    student_academic_router, prefix="/placement/student_academic", tags=["Placement - Student Academic"]
+)
+
+# Include routes for student resume module (PLM-BE-008)
+router.include_router(
+    student_resume_router, prefix="/placement/student_resume", tags=["Placement - Student Resume"]
+)
 # ── Placement - Drive Routes ──────────────────────────────────────────────────
 from app.api.v1.placement_module.drive.drive_api import (
     router as drive_router,
