@@ -58,7 +58,31 @@ router.include_router(
     tags=["Placement - Company"],
 )
 
+# ── Placement - Company Registration Routes ───────────────────────────────────
+from app.api.v1.placement_module.company.self_registration_api import (
+    router as self_reg_router,
+)
+
+router.include_router(
+    self_reg_router,
+    prefix="/placement/company-registration",
+    tags=["Placement - Company Registration"],
+)
+
+
 # Include routes for placement module
 router.include_router(
     placement_contact_router, prefix="/placement/contact", tags=["Placement - Contact"]
+)
+
+
+# ── Placement - Drive Routes ──────────────────────────────────────────────────
+from app.api.v1.placement_module.drive.drive_api import (
+    router as drive_router,
+)
+
+router.include_router(
+    drive_router,
+    prefix="/placement/drive",
+    tags=["Placement - Drive"],
 )
