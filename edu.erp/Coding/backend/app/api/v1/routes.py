@@ -8,13 +8,12 @@ from app.utils.auth_helper import get_current_user
 from app.utils.http_return_helper import returnSuccess, returnException
 
 from ...api.auth import login, register, refresh_token
-
 from ...api.auth import login
 
 from ...api.v1.ems_module.configurations.department import department
 
 from ...api.v1.ems_module.comman_functions import comman_function
-
+from app.api.v1.placement_module import notification_event_type_api
 from app.api.v1.cudo_module.program_mode.api.program_mode_api import (
     router as program_mode_router
 )
@@ -25,7 +24,12 @@ from app.api.v1.placement_module.company.company_api import (
     router as company_router
 )
 from app.api.v1.placement_module.contact_api import router as placement_contact_router
-
+from app.api.v1.placement_module.notification_api import (
+    router as notification_router
+)
+from app.api.v1.placement_module.notification_log_api import (
+    router as notification_log_router
+)
 router = APIRouter()
 
 # Include auth routes
@@ -61,4 +65,21 @@ router.include_router(
 # Include routes for placement module
 router.include_router(
     placement_contact_router, prefix="/placement/contact", tags=["Placement - Contact"]
+)
+router.include_router(
+    notification_router,
+    prefix="/placement/notification",
+    tags=["Placement - Notification"]
+)
+
+router.include_router(
+    notification_log_router,
+    prefix="/placement/notification-log",
+    tags=["Placement - Notification Log"]
+)
+
+router.include_router(
+    notification_event_type_api.router,
+    prefix="/placement/event-type",
+    tags=["Placement - Event Type"]
 )

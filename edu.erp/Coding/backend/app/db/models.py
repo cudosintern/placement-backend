@@ -2,7 +2,7 @@ from sqlalchemy import DECIMAL, Integer, TIMESTAMP, Numeric, PrimaryKeyConstrain
     Integer, SmallInteger, String, Date, ForeignKey, Boolean, CHAR, DateTime, Time, text, Enum, BigInteger
 from sqlalchemy.orm import relationship, synonym
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.dialects.mysql import MEDIUMINT, TINYINT, YEAR
+from sqlalchemy.dialects.mysql import INTEGER as MYSQL_INTEGER, MEDIUMINT, TINYINT, YEAR
 
 from datetime import datetime
 from sqlalchemy.sql import func
@@ -5762,7 +5762,73 @@ class IEMSPlacementCompany(Base):
 
     contacts = relationship("IEMSPlacementContact", back_populates="company", cascade="all, delete-orphan")
 
+class IEMSPlacementNotificationTemplate(Base):
+    __tablename__ = 'plm_notification_template'
 
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    notification_title = Column(Text, nullable=False)
+    notification_message = Column(Text, nullable=False)
+    notification_type = Column(String(100), nullable=False)
+    
+    event_type_id = Column(Integer, nullable=True)
+
+    org_id = Column(Integer, nullable=True)
+    status = Column(TINYINT, default=1)
+
+    created_by = Column(Integer, nullable=True)
+    modified_by = Column(Integer, nullable=True)
+
+    create_date = Column(DateTime, nullable=True)
+    modify_date = Column(DateTime, nullable=True)
+    
+class IEMSPlacementNotificationEventType(Base):
+    __tablename__ = 'plm_notification_event_type'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    event_code = Column(String(100), nullable=False)
+
+    event_name = Column(String(255), nullable=False)
+
+    status = Column(TINYINT, default=1)
+
+    org_id = Column(Integer, nullable=True)
+
+    created_by = Column(Integer, nullable=True)
+
+    modified_by = Column(Integer, nullable=True)
+
+    create_date = Column(DateTime, nullable=True)
+
+    modify_date = Column(DateTime, nullable=True)
+
+class IEMSPlacementNotificationLog(Base):
+    __tablename__ = 'plm_notification_log'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    template_id = Column(Integer, nullable=True)
+
+    recipient = Column(String(255), nullable=False)
+
+    notification_type = Column(String(100), nullable=False)
+
+    subject = Column(Text, nullable=True)
+
+    message = Column(Text, nullable=True)
+
+    status = Column(TINYINT, default=1)
+
+    org_id = Column(Integer, nullable=True)
+
+    created_by = Column(Integer, nullable=True)
+
+    modified_by = Column(Integer, nullable=True)
+
+    create_date = Column(DateTime, nullable=True)
+
+    modify_date = Column(DateTime, nullable=True)
+    
 class IEMSPlacementContact(Base):
     __tablename__ = 'iems_placement_contact'
 
@@ -5772,7 +5838,7 @@ class IEMSPlacementContact(Base):
     last_name = Column(String(100), nullable=True)
     email = Column(String(150), nullable=True)
     phone = Column(String(20), nullable=True)
-    designation_id = Column(Integer, ForeignKey('iems_user_designation.designation_id'), nullable=True)
+    designation_id = Column(MYSQL_INTEGER(unsigned=True), ForeignKey('iems_user_designation.designation_id'), nullable=True)
     is_primary = Column(TINYINT, default=0)
     status = Column(TINYINT, default=1)
     org_id = Column(Integer, nullable=True)
