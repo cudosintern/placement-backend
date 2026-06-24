@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.db.models import (
+from app.db.placement_models import (
     IEMSPlacementNotificationTemplate,
     IEMSPlacementNotificationLog,
 )

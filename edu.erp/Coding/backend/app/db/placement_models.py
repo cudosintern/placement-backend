@@ -4,7 +4,7 @@ placement_models.py
 SQLAlchemy ORM models for the Placement Module.
 Kept separate from the main models.py to avoid bloat.
 """
-
+from sqlalchemy.dialects.mysql import INTEGER as MYSQL_INTEGER, MEDIUMINT, TINYINT, YEAR
 from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, SmallInteger, String, Text
@@ -40,3 +40,73 @@ class PlacementCompany(Base):
     modified_by = Column(Integer, nullable=True)
     create_date = Column(DateTime, nullable=True, default=datetime.now)
     modify_date = Column(DateTime, nullable=True, onupdate=datetime.now)
+
+
+
+class IEMSPlacementNotificationTemplate(Base):
+    __tablename__ = 'plm_notification_template'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    notification_title = Column(Text, nullable=False)
+    notification_message = Column(Text, nullable=False)
+    notification_type = Column(String(100), nullable=False)
+    
+    event_type_id = Column(Integer, nullable=True)
+
+    org_id = Column(Integer, nullable=True)
+    status = Column(TINYINT, default=1)
+
+    created_by = Column(Integer, nullable=True)
+    modified_by = Column(Integer, nullable=True)
+
+    create_date = Column(DateTime, nullable=True)
+    modify_date = Column(DateTime, nullable=True)
+    
+class IEMSPlacementNotificationEventType(Base):
+    __tablename__ = 'plm_notification_event_type'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    event_code = Column(String(100), nullable=False)
+
+    event_name = Column(String(255), nullable=False)
+
+    status = Column(TINYINT, default=1)
+
+    org_id = Column(Integer, nullable=True)
+
+    created_by = Column(Integer, nullable=True)
+
+    modified_by = Column(Integer, nullable=True)
+
+    create_date = Column(DateTime, nullable=True)
+
+    modify_date = Column(DateTime, nullable=True)
+
+
+class IEMSPlacementNotificationLog(Base):
+    __tablename__ = 'plm_notification_log'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    template_id = Column(Integer, nullable=True)
+
+    recipient = Column(String(255), nullable=False)
+
+    notification_type = Column(String(100), nullable=False)
+
+    subject = Column(Text, nullable=True)
+
+    message = Column(Text, nullable=True)
+
+    status = Column(TINYINT, default=1)
+
+    org_id = Column(Integer, nullable=True)
+
+    created_by = Column(Integer, nullable=True)
+
+    modified_by = Column(Integer, nullable=True)
+
+    create_date = Column(DateTime, nullable=True)
+
+    modify_date = Column(DateTime, nullable=True)
