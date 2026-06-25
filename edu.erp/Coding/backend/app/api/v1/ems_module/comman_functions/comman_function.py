@@ -2315,3 +2315,44 @@ def is_backlog_with_cia_see_db(db: Session, current_user: str, org_id: int):
     )
     rowcount = query.count()
     return rowcount
+
+
+@router.post("/company_list")
+@router.get("/company_list")
+def comman_company_list(
+    current_user: dict = Depends(get_current_user),
+    org_id: Optional[int] = Header(None),
+    db: Session = Depends(get_db)
+):
+    try:
+        from app.db.placement_models import PlacementCompany
+        resolved_org = org_id or 1
+        companies = db.query(PlacementCompany).filter(
+            PlacementCompany.org_id == resolved_org,
+            PlacementCompany.status == 1
+        ).order_by(PlacementCompany.company_name).all()
+        
+        result = []
+        for c in companies:
+            result.append({
+                "company_id": c.company_id,
+                "company_name": c.company_name,
+                "company_type": c.company_type,
+                "industry": c.industry,
+                "website": c.website,
+                "email": c.email,
+                "phone": c.phone,
+                "address": c.address,
+                "city": c.city,
+                "state": c.state,
+                "country": c.country,
+                "pincode": c.pincode,
+                "contact_person": c.contact_person,
+                "contact_phone": c.contact_phone,
+                "contact_email": c.contact_email,
+                "description": c.description,
+                "status": c.status,
+            })
+        return returnSuccess(result)
+    except Exception as e:
+        return returnException(str(e))

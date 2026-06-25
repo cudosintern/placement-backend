@@ -94,6 +94,7 @@ router.include_router(
     tags=["Placement - Event Type"]
 )
 
+<<<<<<< Updated upstream
 # Include routes for student profile module
 router.include_router(
     student_profile_router, prefix="/placement/student_profile", tags=["Placement - Student Profile"]
@@ -123,6 +124,6 @@ router.include_router(
 # ── Placement - Interview Scheduling Routes ──────────────────────────────────
 router.include_router(
     interview_schedule_router,
-    prefix="/placement/interview-scheduling",
-    tags=["Placement - Interview Scheduling"],
+    prefix="/placement/interview",
+    tags=["Placement - Interview Scheduling"]
 )
