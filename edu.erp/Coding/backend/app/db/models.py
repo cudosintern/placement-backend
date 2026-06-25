@@ -5760,7 +5760,7 @@ class IEMSPlacementCompany(Base):
     created_date = Column(DateTime, nullable=True)
     modified_date = Column(DateTime, nullable=True)
 
-    contacts = relationship("IEMSPlacementContact", back_populates="company", cascade="all, delete-orphan")
+    # contacts = relationship("IEMSPlacementContact", back_populates="company", cascade="all, delete-orphan")
 
 #class IEMSPlacementNotificationTemplate(Base):
  #   __tablename__ = 'plm_notification_template'
@@ -5803,11 +5803,13 @@ class IEMSPlacementCompany(Base):
    # modify_date = Column(DateTime, nullable=True)
 
     
+from app.db.placement_models import PlacementCompany
+
 class IEMSPlacementContact(Base):
     __tablename__ = 'iems_placement_contact'
 
     contact_id = Column(Integer, primary_key=True, autoincrement=True)
-    company_id = Column(Integer, ForeignKey('iems_placement_company.company_id', ondelete='CASCADE'), nullable=False)
+    company_id = Column(Integer, ForeignKey('plm_company.company_id', ondelete='CASCADE'), nullable=False)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=True)
     email = Column(String(150), nullable=True)
@@ -5821,5 +5823,5 @@ class IEMSPlacementContact(Base):
     created_date = Column(DateTime, nullable=True)
     modified_date = Column(DateTime, nullable=True)
 
-    company = relationship("IEMSPlacementCompany", back_populates="contacts")
+    company = relationship("PlacementCompany")
     designation = relationship("IEMSUserDesignation", foreign_keys=[designation_id])

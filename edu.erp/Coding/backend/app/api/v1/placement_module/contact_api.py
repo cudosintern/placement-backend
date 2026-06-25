@@ -23,6 +23,7 @@ def _contact_to_dict(c: IEMSPlacementContact) -> dict:
     return {
         "contact_id": c.contact_id,
         "company_id": c.company_id,
+        "company_name": c.company.company_name if c.company else None,
         "first_name": c.first_name,
         "last_name": c.last_name,
         "email": c.email,
