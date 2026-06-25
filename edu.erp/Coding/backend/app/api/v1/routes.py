@@ -94,7 +94,6 @@ router.include_router(
     tags=["Placement - Event Type"]
 )
 
-<<<<<<< Updated upstream
 # Include routes for student profile module
 router.include_router(
     student_profile_router, prefix="/placement/student_profile", tags=["Placement - Student Profile"]
