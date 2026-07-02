@@ -96,3 +96,14 @@ router.include_router(
     prefix="/placement/drive",
     tags=["Placement - Drive"],
 )
+
+# ── Placement - Student Drive (Apply / Withdraw / My Applications) ────────────
+from app.api.v1.placement_module.student.student_drive_api import (
+    router as student_drive_router,
+)
+
+router.include_router(
+    student_drive_router,
+    prefix="/placement/student",
+    tags=["Placement - Student Drive"],
+)
