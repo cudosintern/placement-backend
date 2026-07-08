@@ -766,3 +766,426 @@ def get_eligible_count(
         )
     except Exception as e:
         return returnException(str(e))
+
+
+# ===========================================================================
+# 8. GET /placement/drive/applications — Applicants for a drive (shortlisting)
+# ===========================================================================
+
+
+@router.get("/applications")
+def get_drive_applications(
+    drive_id: int = Query(..., description="plm_drive.drive_id"),
+    current_user: dict = Depends(get_current_user),
+    org_id: Optional[int] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Return all applicants for a drive from plm_application.
+    Joins with plm_student_profile, iems_students, iems_department.
+    CGPA pulled from plm_student_profile.current_cgpa.
+    Results sorted by CGPA DESC.
+    """
+    try:
+        from app.db.placement_models import PLMApplication, PLMStudentProfile, PLMStudentResume
+        from app.db.models import IEMStudents, IEMSDepartment
+
+        resolved_org = org_id or 1
+
+        # Verify drive exists
+        drive = (
+            db.query(PlacementDrive)
+            .filter(
+                PlacementDrive.drive_id == drive_id,
+                PlacementDrive.org_id == resolved_org,
+            )
+            .first()
+        )
+        if not drive:
+            return returnException(f"Drive {drive_id} not found.")
+
+        # Query: application → profile → student → department
+        rows = (
+            db.query(
+                PLMApplication,
+                PLMStudentProfile,
+                IEMStudents,
+                IEMSDepartment,
+            )
+            .join(
+                PLMStudentProfile,
+                PLMStudentProfile.profile_id == PLMApplication.profile_id,
+            )
+            .join(
+                IEMStudents,
+                IEMStudents.student_id == PLMStudentProfile.student_id,
+            )
+            .outerjoin(
+                IEMSDepartment,
+                IEMSDepartment.dept_id == IEMStudents.department_id,
+            )
+            .filter(PLMApplication.drive_id == drive_id)
+            .order_by(PLMStudentProfile.current_cgpa.desc())
+            .all()
+        )
+
+        # Fetch active resumes in bulk
+        profile_ids = [row[1].profile_id for row in rows]
+        resume_map: dict = {}
+        if profile_ids:
+            resumes = (
+                db.query(PLMStudentResume)
+                .filter(
+                    PLMStudentResume.profile_id.in_(profile_ids),
+                    PLMStudentResume.is_active == 1,
+                    PLMStudentResume.status == 1,
+                )
+                .all()
+            )
+            for r in resumes:
+                resume_map[r.profile_id] = {"resume_id": r.resume_id, "file_path": r.file_path}
+
+        applicants = []
+        for app, profile, student, dept in rows:
+            resume_info = resume_map.get(profile.profile_id)
+            applicants.append({
+                "application_id": app.application_id,
+                "profile_id": app.profile_id,
+                "student_id": profile.student_id,
+                "name": student.name or f"{student.first_name or ''} {student.last_name or ''}".strip(),
+                "usno": student.usno or "",
+                "email": student.email or "",
+                "department": dept.dept_name if dept else "",
+                "department_id": student.department_id or 0,
+                "cgpa": float(profile.current_cgpa) if profile.current_cgpa is not None else 0.0,
+                "backlogs": int(profile.backlogs or 0),
+                "resume_id": resume_info["resume_id"] if resume_info else None,
+                "resume_url": resume_info["file_path"] if resume_info else None,
+                "applied_at": str(app.applied_at) if app.applied_at else None,
+                "status": app.status,
+            })
+
+        return returnSuccess(
+            {"applicants": applicants, "total": len(applicants)},
+            message=f"{len(applicants)} applicant(s) found.",
+        )
+    except Exception as e:
+        return returnException(str(e))
+
+
+# ===========================================================================
+# 9. POST /placement/drive/applications/shortlist — Bulk shortlist
+# ===========================================================================
+
+
+from pydantic import BaseModel as _PydanticBase
+
+
+class ShortlistPayload(_PydanticBase):
+    drive_id: int
+    application_ids: List[int]
+
+
+@router.post("/applications/shortlist")
+def shortlist_applications(
+    payload: ShortlistPayload,
+    current_user: dict = Depends(get_current_user),
+    org_id: Optional[int] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Bulk-set selected application_ids to SHORTLISTED.
+    Enforces vacancy cap — rejects if already-shortlisted + new > vacancy.
+    Updates plm_drive.shortlisted_count.
+    """
+    try:
+        from app.db.placement_models import PLMApplication
+
+        resolved_org = org_id or 1
+
+        drive = (
+            db.query(PlacementDrive)
+            .filter(
+                PlacementDrive.drive_id == payload.drive_id,
+                PlacementDrive.org_id == resolved_org,
+            )
+            .first()
+        )
+        if not drive:
+            return returnException(f"Drive {payload.drive_id} not found.")
+
+        # Vacancy cap check
+        current_shortlisted = (
+            db.query(func.count(PLMApplication.application_id))
+            .filter(
+                PLMApplication.drive_id == payload.drive_id,
+                PLMApplication.status == "SHORTLISTED",
+            )
+            .scalar()
+            or 0
+        )
+        if drive.vacancy_count is not None:
+            if current_shortlisted + len(payload.application_ids) > drive.vacancy_count:
+                return returnException(
+                    f"Vacancy cap exceeded. Vacancy: {drive.vacancy_count}, "
+                    f"Already shortlisted: {current_shortlisted}, "
+                    f"Trying to add: {len(payload.application_ids)}."
+                )
+
+        # Update application statuses
+        updated = (
+            db.query(PLMApplication)
+            .filter(
+                PLMApplication.application_id.in_(payload.application_ids),
+                PLMApplication.drive_id == payload.drive_id,
+                PLMApplication.status == "APPLIED",
+            )
+            .all()
+        )
+
+        for app in updated:
+            app.status = "SHORTLISTED"
+
+        # Refresh shortlisted_count on the drive
+        new_count = (
+            db.query(func.count(PLMApplication.application_id))
+            .filter(
+                PLMApplication.drive_id == payload.drive_id,
+                PLMApplication.status == "SHORTLISTED",
+            )
+            .scalar()
+            or 0
+        ) + len(updated)
+
+        drive.shortlisted_count = new_count
+        drive.modify_date = datetime.now()
+
+        db.commit()
+
+        return returnSuccess(
+            {"shortlisted": len(updated)},
+            message=f"{len(updated)} student(s) shortlisted successfully.",
+        )
+    except Exception as e:
+        db.rollback()
+        return returnException(str(e))
+
+
+# ===========================================================================
+# 10. POST /placement/drive/applications/reject — Reject one application
+# ===========================================================================
+
+
+class RejectPayload(_PydanticBase):
+    application_id: int
+    reason: Optional[str] = None
+
+
+@router.post("/applications/reject")
+def reject_application(
+    payload: RejectPayload,
+    current_user: dict = Depends(get_current_user),
+    org_id: Optional[int] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """Reject a single application — sets status to REJECTED."""
+    try:
+        from app.db.placement_models import PLMApplication
+
+        app = (
+            db.query(PLMApplication)
+            .filter(PLMApplication.application_id == payload.application_id)
+            .first()
+        )
+        if not app:
+            return returnException(f"Application {payload.application_id} not found.")
+
+        if app.status in ("SHORTLISTED", "OFFERED"):
+            return returnException(
+                f"Cannot reject an application that is already '{app.status}'."
+            )
+
+        app.status = "REJECTED"
+        db.commit()
+
+        return returnSuccess(
+            {"application_id": app.application_id, "status": "REJECTED"},
+            message="Application rejected.",
+        )
+    except Exception as e:
+        db.rollback()
+        return returnException(str(e))
+
+
+# ===========================================================================
+# 11. POST /placement/drive/applications/auto-shortlist — Auto shortlist
+#     Logic:
+#       1. Check vacancy < applied (prerequisite)
+#       2. Filter applicants by eligible branches + min_cgpa + max_backlogs
+#       3. Sort eligible applicants by CGPA DESC
+#       4. Top N (N = vacancy_count) → SHORTLISTED
+#       5. Rest (eligible but outside cap + ineligible) → WAITLISTED
+#       6. Update drive.shortlisted_count
+# ===========================================================================
+
+
+class AutoShortlistPayload(_PydanticBase):
+    drive_id: int
+
+
+@router.post("/applications/auto-shortlist")
+def auto_shortlist_applications(
+    payload: AutoShortlistPayload,
+    current_user: dict = Depends(get_current_user),
+    org_id: Optional[int] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Automatically shortlist applicants for a drive based on:
+      - Eligible branches configured for the drive
+      - Minimum CGPA criteria
+      - Maximum backlogs criteria
+    Picks the top N applicants sorted by CGPA DESC (N = vacancy_count).
+    All remaining APPLIED applicants are moved to WAITLISTED.
+    Only processes applicants currently in APPLIED status.
+    """
+    try:
+        from app.db.placement_models import PLMApplication, PLMStudentProfile
+        from app.db.models import IEMStudents
+
+        resolved_org = org_id or 1
+
+        # 1. Fetch the drive
+        drive = (
+            db.query(PlacementDrive)
+            .filter(
+                PlacementDrive.drive_id == payload.drive_id,
+                PlacementDrive.org_id == resolved_org,
+            )
+            .first()
+        )
+        if not drive:
+            return returnException(f"Drive {payload.drive_id} not found.")
+
+        vacancy = drive.vacancy_count
+        if vacancy is None or vacancy <= 0:
+            return returnException("Drive has no vacancy count set.")
+
+        # 2. Count TOTAL applications
+        applied_count = (
+            db.query(func.count(PLMApplication.application_id))
+            .filter(
+                PLMApplication.drive_id == payload.drive_id,
+            )
+            .scalar()
+            or 0
+        )
+
+        if applied_count <= vacancy:
+            return returnException(
+                f"Auto-shortlisting requires more applicants than vacancies. "
+                f"Applied: {applied_count}, Vacancy: {vacancy}. "
+                f"When applied ≤ vacancy, you can shortlist all directly."
+            )
+
+        # 3. Get eligible branch dept_ids for this drive
+        eligible_dept_ids = [
+            row.dept_id
+            for row in db.query(PlacementDriveEligibleBranch.dept_id)
+            .filter(PlacementDriveEligibleBranch.drive_id == payload.drive_id)
+            .all()
+        ]
+
+        min_cgpa = float(drive.min_cgpa) if drive.min_cgpa is not None else 0.0
+        max_backlogs = drive.max_backlogs if drive.max_backlogs is not None else 999
+
+        # 4. Fetch all APPLIED applicants with profile + student info
+        rows = (
+            db.query(PLMApplication, PLMStudentProfile, IEMStudents)
+            .join(PLMStudentProfile, PLMStudentProfile.profile_id == PLMApplication.profile_id)
+            .join(IEMStudents, IEMStudents.student_id == PLMStudentProfile.student_id)
+            .filter(
+                PLMApplication.drive_id == payload.drive_id,
+                PLMApplication.status == "APPLIED",
+            )
+            .all()
+        )
+
+        # 5. Split into eligible vs ineligible
+        eligible = []
+        ineligible_ids = []
+
+        for app, profile, student in rows:
+            cgpa = float(profile.current_cgpa) if profile.current_cgpa is not None else 0.0
+            backlogs = int(profile.backlogs or 0)
+            dept_id = student.department_id
+
+            branch_ok = (dept_id in eligible_dept_ids) if eligible_dept_ids else True
+            cgpa_ok = cgpa >= min_cgpa
+            backlogs_ok = backlogs <= max_backlogs
+
+            if branch_ok and cgpa_ok and backlogs_ok:
+                eligible.append((app, cgpa))
+            else:
+                ineligible_ids.append(app.application_id)
+
+        # 6. Sort eligible by CGPA DESC
+        eligible.sort(key=lambda x: x[1], reverse=True)
+
+        # 6b. Check remaining vacancy
+        current_shortlisted = (
+            db.query(func.count(PLMApplication.application_id))
+            .filter(
+                PLMApplication.drive_id == payload.drive_id,
+                PLMApplication.status == "SHORTLISTED",
+            )
+            .scalar()
+            or 0
+        )
+        
+        remaining_vacancy = vacancy - current_shortlisted
+        if remaining_vacancy <= 0:
+            return returnException("Vacancy cap has already been reached. Cannot auto-shortlist further.")
+
+        to_shortlist = [app for app, _ in eligible[:remaining_vacancy]]
+        to_waitlist_from_eligible = [app for app, _ in eligible[remaining_vacancy:]]
+
+        shortlist_ids = [a.application_id for a in to_shortlist]
+        waitlist_ids = [a.application_id for a in to_waitlist_from_eligible] + ineligible_ids
+
+        # 7. Bulk update statuses
+        if shortlist_ids:
+            db.query(PLMApplication).filter(
+                PLMApplication.application_id.in_(shortlist_ids)
+            ).update({"status": "SHORTLISTED", "is_eligible": 1}, synchronize_session=False)
+
+        if waitlist_ids:
+            db.query(PLMApplication).filter(
+                PLMApplication.application_id.in_(waitlist_ids)
+            ).update({"status": "WAITLISTED"}, synchronize_session=False)
+
+        # 8. Update drive shortlisted_count
+        drive.shortlisted_count = len(shortlist_ids)
+        drive.modify_date = datetime.now()
+
+        db.commit()
+
+        return returnSuccess(
+            {
+                "shortlisted": len(shortlist_ids),
+                "waitlisted": len(waitlist_ids),
+                "eligible_count": len(eligible),
+                "ineligible_count": len(ineligible_ids),
+                "vacancy": vacancy,
+                "applied_processed": applied_count,
+            },
+            message=(
+                f"Auto-shortlisting complete. {len(shortlist_ids)} student(s) shortlisted "
+                f"(top by CGPA from eligible branches). "
+                f"{len(waitlist_ids)} moved to waiting list."
+            ),
+        )
+    except Exception as e:
+        db.rollback()
+        return returnException(str(e))
+

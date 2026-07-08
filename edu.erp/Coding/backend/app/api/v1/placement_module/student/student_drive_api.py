@@ -26,11 +26,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.db.models import IEMStudents, PLMStudentProfile, PLMStudentResume
+from app.db.models import IEMStudents
 from app.db.placement_models import (
     PlacementDrive,
     PlacementDriveEligibleBranch,
     PLMApplication,
+    PLMStudentProfile,
+    PLMStudentResume,
 )
 from app.utils.auth_helper import get_current_user
 from app.utils.http_return_helper import returnException, returnSuccess

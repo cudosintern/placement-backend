@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.db.models import PLMStudentResume, PLMStudentProfile
+from app.db.placement_models import PLMStudentResume, PLMStudentProfile
 from app.utils.auth_helper import get_current_user
 from app.utils.http_return_helper import returnException, returnSuccess
 

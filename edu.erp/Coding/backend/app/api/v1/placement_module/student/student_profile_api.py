@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import outerjoin
 
 from app.core.database import get_db
-from app.db.models import PLMStudentProfile, PLMStudentSkill, PLMStudentCertification, IEMStudents, IEMSCGPA, IEMSDepartment
+from app.db.models import IEMStudents, IEMSCGPA, IEMSDepartment
+from app.db.placement_models import PLMStudentProfile, PLMStudentSkill, PLMStudentCertification
 from app.utils.auth_helper import get_current_user
 from app.utils.http_return_helper import returnException, returnSuccess
 from app.api.v1.placement_module.student.student_profile_schema import (

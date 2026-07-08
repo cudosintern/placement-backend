@@ -12,6 +12,7 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    DECIMAL,
     ForeignKey,
     Integer,
     Numeric,
@@ -19,6 +20,8 @@ from sqlalchemy import (
     String,
     Text,
 )
+from sqlalchemy.dialects.mysql import TINYINT, INTEGER as MySQLInteger
+from sqlalchemy.orm import relationship
 
 from app.core.database import Base
 
@@ -227,3 +230,100 @@ class PLMApplication(Base):
         String(20), nullable=False, default="APPLIED"
     )  # APPLIED | SHORTLISTED | WAITLISTED | IN_PROCESS | OFFERED | REJECTED | WITHDRAWN
     is_eligible    = Column(SmallInteger, nullable=False, default=1)  # 1=Yes, 0=No
+
+
+# =============================================================================
+# Module 5: Student Profile, Skills, Certifications & Resume
+# (Moved here from models.py so all placement tables stay together)
+# =============================================================================
+
+
+class PLMStudentProfile(Base):
+    __tablename__ = 'plm_student_profile'
+
+    profile_id = Column(Integer, primary_key=True, autoincrement=True)
+    student_id = Column(MySQLInteger(unsigned=True), ForeignKey('iems_students.student_id', ondelete='CASCADE'), nullable=False, unique=True)
+    linkedin_url = Column(String(255), nullable=True)
+    github_url = Column(String(255), nullable=True)
+    portfolio_url = Column(String(255), nullable=True)
+    resume_path = Column(String(500), nullable=True)
+    current_cgpa = Column(DECIMAL(4, 2), nullable=True)
+    backlogs = Column(Integer, default=0, nullable=True)
+    is_placement_eligible = Column(TINYINT, default=1)
+    career_objective = Column(Text, nullable=True)
+    preferred_locations = Column(String(255), nullable=True)
+    org_id = Column(Integer, nullable=False)
+    status = Column(TINYINT, default=1)
+    created_by = Column(Integer, nullable=True)
+    modified_by = Column(Integer, nullable=True)
+    created_date = Column(DateTime, nullable=True)
+    modified_date = Column(DateTime, nullable=True)
+
+    # Relationships
+    student = relationship("IEMStudents", foreign_keys=[student_id])
+    skills = relationship("PLMStudentSkill", back_populates="profile", cascade="all, delete-orphan")
+    certifications = relationship("PLMStudentCertification", back_populates="profile", cascade="all, delete-orphan")
+
+
+class PLMStudentSkill(Base):
+    __tablename__ = 'plm_student_skill'
+
+    skill_id = Column(Integer, primary_key=True, autoincrement=True)
+    profile_id = Column(Integer, ForeignKey('plm_student_profile.profile_id', ondelete='CASCADE'), nullable=False)
+    student_id = Column(Integer, nullable=False)
+    skill_name = Column(String(150), nullable=False)
+    proficiency_level = Column(String(50), nullable=True)   # Beginner / Intermediate / Expert
+    org_id = Column(Integer, nullable=False)
+    status = Column(TINYINT, default=1)
+    created_by = Column(Integer, nullable=True)
+    modified_by = Column(Integer, nullable=True)
+    created_date = Column(DateTime, nullable=True)
+    modified_date = Column(DateTime, nullable=True)
+
+    # Relationships
+    profile = relationship("PLMStudentProfile", back_populates="skills")
+
+
+class PLMStudentCertification(Base):
+    __tablename__ = 'plm_student_certification'
+
+    certification_id = Column(Integer, primary_key=True, autoincrement=True)
+    profile_id = Column(Integer, ForeignKey('plm_student_profile.profile_id', ondelete='CASCADE'), nullable=False)
+    student_id = Column(Integer, nullable=False)
+    certification_name = Column(String(255), nullable=False)
+    issuing_organization = Column(String(255), nullable=True)
+    issue_date = Column(Date, nullable=True)
+    expiry_date = Column(Date, nullable=True)
+    credential_id = Column(String(150), nullable=True)
+    credential_url = Column(String(500), nullable=True)
+    org_id = Column(Integer, nullable=False)
+    status = Column(TINYINT, default=1)
+    created_by = Column(Integer, nullable=True)
+    modified_by = Column(Integer, nullable=True)
+    created_date = Column(DateTime, nullable=True)
+    modified_date = Column(DateTime, nullable=True)
+
+    # Relationships
+    profile = relationship("PLMStudentProfile", back_populates="certifications")
+
+
+class PLMStudentResume(Base):
+    __tablename__ = 'plm_student_resume'
+
+    resume_id     = Column(Integer, primary_key=True, autoincrement=True)
+    profile_id    = Column(Integer, ForeignKey('plm_student_profile.profile_id', ondelete='CASCADE'), nullable=False)
+    student_id    = Column(Integer, nullable=False)
+    file_name     = Column(String(255), nullable=False)          # original uploaded filename
+    stored_name   = Column(String(500), nullable=False)          # UUID-based stored filename
+    file_path     = Column(String(1000), nullable=False)         # relative path inside uploads/
+    file_size_kb  = Column(Integer, nullable=True)               # file size in KB
+    is_active     = Column(TINYINT, default=1)                   # 1 = this is the current active resume
+    org_id        = Column(Integer, nullable=False)
+    status        = Column(TINYINT, default=1)                   # 1=active, 0=soft-deleted
+    created_by    = Column(Integer, nullable=True)
+    modified_by   = Column(Integer, nullable=True)
+    created_date  = Column(DateTime, nullable=True)
+    modified_date = Column(DateTime, nullable=True)
+
+    # Relationships
+    profile = relationship("PLMStudentProfile", foreign_keys=[profile_id])
