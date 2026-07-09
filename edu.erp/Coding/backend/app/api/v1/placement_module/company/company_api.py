@@ -87,6 +87,7 @@ def get_company_list(
             )
 
         companies = query.order_by(PlacementCompany.company_name).all()
+        print("Companies found:", companies)
         data = [_company_to_dict(c) for c in companies]
         return returnSuccess(data, message=f"{len(data)} company(ies) found")
     except Exception as e:
@@ -98,6 +99,7 @@ def get_company_list(
 # ---------------------------------------------------------------------------
 @router.get("/detail/{company_id}")
 def get_company_detail(
+    
     company_id: int,
     current_user: dict = Depends(get_current_user),
     org_id: Optional[int] = Header(None),

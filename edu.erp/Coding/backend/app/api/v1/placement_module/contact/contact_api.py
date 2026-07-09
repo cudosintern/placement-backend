@@ -8,7 +8,11 @@ from app.core.database import get_db
 from app.db.models import IEMSPlacementContact, IEMSUserDesignation
 from app.utils.auth_helper import get_current_user
 from app.utils.http_return_helper import returnException, returnSuccess
-from app.api.v1.placement_module.contact.contact_schema import ContactCreate, ContactUpdate
+from app.api.v1.placement_module.contact.contact_schema import (
+    ContactCreate,
+    ContactUpdate,
+    ContactDelete,
+)
 
 router = APIRouter()
 
@@ -19,6 +23,7 @@ def _contact_to_dict(c: IEMSPlacementContact) -> dict:
     return {
         "contact_id": c.contact_id,
         "company_id": c.company_id,
+        "company_name": c.company.company_name if c.company else None,
         "first_name": c.first_name,
         "last_name": c.last_name,
         "email": c.email,
@@ -159,6 +164,34 @@ def update_contact(
         db.rollback()
         return returnException(str(e))
 
+# ─── 4. Delete Contact ───────────────────────────────────────────────────────
+@router.delete("/delete_contact")
+def delete_contact(
+    data: ContactDelete,
+    current_user: dict = Depends(get_current_user),
+    org_id: int = Header(...),
+    db: Session = Depends(get_db),
+):
+    try:
+        contact = db.query(IEMSPlacementContact).filter(
+            IEMSPlacementContact.contact_id == data.contact_id,
+            IEMSPlacementContact.org_id == org_id,
+        ).first()
+
+        if not contact:
+            return returnException("Contact not found.")
+        
+        if contact.status == 1:
+            return returnException("Active contacts cannot be deleted.")
+
+        db.delete(contact)
+        db.commit()
+
+        return returnSuccess("Contact deleted successfully.")
+
+    except Exception as e:
+        db.rollback()
+        return returnException(str(e))
 
 # ─── 4. Get Designations ───────────────────────────────────────────────────────
 
