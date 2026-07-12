@@ -19,7 +19,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.utils.auth_helper import get_current_user
 from app.utils.http_return_helper import returnException, returnSuccess
-from app.db.placement_models import PlacementCompany
+from app.db.placement_models import PlacementCompany, PlacementDrive, PlacementOffer
+from app.db.models import PLMStudentProfile, IEMStudents
 from app.api.v1.placement_module.company.company_schema import CompanyCreate, CompanyStatusUpdate
 
 router = APIRouter()
@@ -112,7 +113,49 @@ def get_company_detail(
         ).first()
         if not company:
             return returnException(f"Company with ID {company_id} not found.")
-        return returnSuccess(_company_to_dict(company))
+
+        drives = db.query(PlacementDrive).filter(
+            PlacementDrive.company_id == company_id
+        ).all()
+
+        drives_data = []
+        for d in drives:
+            offers = db.query(
+                PlacementOffer.offer_id,
+                PlacementOffer.role,
+                PlacementOffer.ctc,
+                PlacementOffer.status,
+                IEMStudents.name.label("student_name"),
+                IEMStudents.usno.label("usn")
+            ).join(
+                PLMStudentProfile, PLMStudentProfile.profile_id == PlacementOffer.profile_id
+            ).join(
+                IEMStudents, IEMStudents.student_id == PLMStudentProfile.student_id
+            ).filter(
+                PlacementOffer.drive_id == d.drive_id
+            ).all()
+
+            drives_data.append({
+                "drive_id": d.drive_id,
+                "drive_name": d.drive_name,
+                "academic_year": d.academic_year,
+                "status": d.status,
+                "students_passed": [
+                    {
+                        "offer_id": o.offer_id,
+                        "student_name": o.student_name,
+                        "usn": o.usn,
+                        "role": o.role,
+                        "ctc": str(o.ctc) if o.ctc else "0.0",
+                        "status": o.status
+                    }
+                    for o in offers
+                ]
+            })
+
+        company_dict = _company_to_dict(company)
+        company_dict["drives"] = drives_data
+        return returnSuccess(company_dict)
     except Exception as e:
         return returnException(str(e))
 
