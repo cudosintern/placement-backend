@@ -421,3 +421,159 @@ class PlacementInterviewSchedule(Base):
     # Relationships
     drive = relationship("PlacementDrive", foreign_keys=[drive_id])
     round = relationship("PlacementDriveRound", foreign_keys=[round_id])
+
+
+class PlacementApplication(Base):
+    """Represents a student's application to a placement drive."""
+
+    __tablename__ = "plm_application"
+
+    application_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, nullable=False)
+    drive_id = Column(Integer, ForeignKey("plm_drive.drive_id"), nullable=False)
+    profile_id = Column(Integer, ForeignKey("plm_student_profile.profile_id"), nullable=False)
+    resume_id = Column(Integer, ForeignKey("plm_student_resume.resume_id"), nullable=True)
+    applied_at = Column(DateTime, default=datetime.now)
+    status = Column(String(50), nullable=False, default="APPLIED")  # APPLIED, SHORTLISTED, WAITLISTED, IN_PROCESS, OFFERED, REJECTED, WITHDRAWN
+    is_eligible = Column(TINYINT, nullable=False, default=1)
+
+    # Relationships
+    drive = relationship("PlacementDrive", foreign_keys=[drive_id])
+    profile = relationship("PLMStudentProfile", foreign_keys=[profile_id])
+    resume = relationship("PLMStudentResume", foreign_keys=[resume_id])
+
+
+class PlacementShortlist(Base):
+    """Represents a shortlisted candidate for a placement drive."""
+
+    __tablename__ = "plm_shortlist"
+
+    shortlist_id = Column(Integer, primary_key=True, autoincrement=True)
+    application_id = Column(Integer, ForeignKey("plm_application.application_id", ondelete="CASCADE"), nullable=False, unique=True)
+    shortlist_type = Column(String(50), nullable=False, default="SYSTEM")  # SYSTEM, MANUAL
+    shortlisted_by = Column(Integer, nullable=True)
+    justification = Column(Text, nullable=True)
+    override_approved_by = Column(Integer, nullable=True)
+    override_approved_at = Column(DateTime, nullable=True)
+    shortlisted_at = Column(DateTime, default=datetime.now)
+
+    # Relationships
+    application = relationship("PlacementApplication", foreign_keys=[application_id])
+
+
+class PlacementWaitlist(Base):
+    """Represents a waitlisted candidate for a placement drive."""
+
+    __tablename__ = "plm_waitlist"
+
+    waitlist_id = Column(Integer, primary_key=True, autoincrement=True)
+    application_id = Column(Integer, ForeignKey("plm_application.application_id", ondelete="CASCADE"), nullable=False, unique=True)
+    drive_id = Column(Integer, ForeignKey("plm_drive.drive_id"), nullable=False)
+    position = Column(SmallInteger, nullable=False)
+    promoted_at = Column(DateTime, nullable=True)
+    promoted_by = Column(Integer, nullable=True)
+
+    # Relationships
+    application = relationship("PlacementApplication", foreign_keys=[application_id])
+    drive = relationship("PlacementDrive", foreign_keys=[drive_id])
+
+
+class PlacementInterviewSlot(Base):
+    """Represents an assigned interview slot for a student."""
+
+    __tablename__ = "plm_interview_slot"
+
+    slot_id = Column(Integer, primary_key=True, autoincrement=True)
+    schedule_id = Column(Integer, ForeignKey("plm_interview_schedule.id", ondelete="CASCADE"), nullable=False)
+    application_id = Column(Integer, ForeignKey("plm_application.application_id"), nullable=False)
+    slot_time = Column(DateTime, nullable=True)
+    interviewer_name = Column(String(150), nullable=True)
+    interviewer_email = Column(String(150), nullable=True)
+    status = Column(String(50), default="SCHEDULED")  # SCHEDULED, COMPLETED, NO_SHOW, CANCELLED
+
+    # Relationships
+    schedule = relationship("PlacementInterviewSchedule", foreign_keys=[schedule_id])
+    application = relationship("PlacementApplication", foreign_keys=[application_id])
+
+
+class PlacementRoundResult(Base):
+    """Represents the selection outcome for a specific round."""
+
+    __tablename__ = "plm_round_result"
+
+    result_id = Column(Integer, primary_key=True, autoincrement=True)
+    application_id = Column(Integer, ForeignKey("plm_application.application_id"), nullable=False)
+    round_id = Column(Integer, ForeignKey("plm_drive_round.round_id"), nullable=False)
+    result = Column(String(50), nullable=False)  # PASS, FAIL, HOLD, ABSENT
+    feedback_notes = Column(Text, nullable=True)
+    recorded_by = Column(Integer, nullable=False)
+    recorded_at = Column(DateTime, default=datetime.now)
+
+    # Relationships
+    application = relationship("PlacementApplication", foreign_keys=[application_id])
+    round = relationship("PlacementDriveRound", foreign_keys=[round_id])
+
+
+class PlacementOffer(Base):
+    __tablename__ = "plm_offer"
+
+    offer_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, nullable=False)
+    application_id = Column(Integer, ForeignKey("plm_application.application_id"), nullable=False, unique=True)
+    drive_id = Column(Integer, ForeignKey("plm_drive.drive_id"), nullable=False)
+    profile_id = Column(Integer, ForeignKey("plm_student_profile.profile_id"), nullable=False)
+    ctc = Column(Numeric(12, 2), nullable=True)
+    role = Column(String(200), nullable=True)
+    location = Column(String(200), nullable=True)
+    joining_date = Column(Date, nullable=True)
+    offer_letter_path = Column(String(500), nullable=True)
+    is_ppo = Column(TINYINT, nullable=True, default=0)
+    status = Column(String(50), nullable=False, default="ISSUED")  # ISSUED, ACCEPTED, DECLINED, REVOKED
+    issued_at = Column(DateTime, nullable=True, default=datetime.now)
+    accepted_at = Column(DateTime, nullable=True)
+    declined_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+    decline_reason = Column(Text, nullable=True)
+    revoke_reason = Column(Text, nullable=True)
+    generated_from_template = Column(TINYINT, nullable=True, default=0)
+    template_id = Column(Integer, nullable=True)
+
+    # Relationships
+    application = relationship("PlacementApplication", foreign_keys=[application_id])
+    drive = relationship("PlacementDrive", foreign_keys=[drive_id])
+    profile = relationship("PLMStudentProfile", foreign_keys=[profile_id])
+
+
+class PlacementOfferCapPolicy(Base):
+    __tablename__ = "plm_offer_cap_policy"
+
+    policy_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, nullable=False)
+    batch_year = Column(YEAR, nullable=False)
+    max_offers_per_student = Column(TINYINT, nullable=True, default=1)
+    allow_multiple = Column(TINYINT, nullable=True, default=0)
+    effective_from = Column(Date, nullable=False)
+    effective_to = Column(Date, nullable=True)
+    created_by = Column(Integer, nullable=False)
+    created_at = Column(DateTime, nullable=True, default=datetime.now)
+
+
+class PlacementPostPlacement(Base):
+    __tablename__ = "plm_post_placement"
+
+    pp_id = Column(Integer, primary_key=True, autoincrement=True)
+    offer_id = Column(Integer, ForeignKey("plm_offer.offer_id"), nullable=False, unique=True)
+    joining_confirmation_date = Column(Date, nullable=True)
+    actual_joining_date = Column(Date, nullable=True)
+    status = Column(String(50), nullable=False, default="CONFIRMED")  # CONFIRMED, NO_SHOW, DEFERRED, REVOKED
+    no_show_reason = Column(Text, nullable=True)
+    deferral_date = Column(Date, nullable=True)
+    alumni_linked = Column(TINYINT, nullable=True, default=0)
+    alumni_record_id = Column(Integer, nullable=True)
+    recorded_by = Column(Integer, nullable=False)
+    recorded_at = Column(DateTime, nullable=True, default=datetime.now)
+
+    # Relationships
+    offer = relationship("PlacementOffer", foreign_keys=[offer_id])
+
+

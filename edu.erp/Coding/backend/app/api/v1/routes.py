@@ -34,6 +34,9 @@ from app.api.v1.placement_module.student.student_profile_api import router as st
 from app.api.v1.placement_module.student.student_academic_api import router as student_academic_router
 from app.api.v1.placement_module.student.student_resume_api import router as student_resume_router
 from app.api.v1.placement_module.interview_schedule_api import router as interview_schedule_router
+from app.api.v1.placement_module.application_api import router as placement_application_router
+from app.api.v1.placement_module.interview_slot_api import router as interview_slot_router
+from app.api.v1.placement_module.offer_api import router as offer_router
 router = APIRouter()
 
 # Include auth routes
@@ -136,4 +139,25 @@ router.include_router(
     interview_schedule_router,
     prefix="/placement/interview",
     tags=["Placement - Interview Scheduling"]
+)
+
+# ── Placement - Application, Shortlist, Waitlist Routes ─────────────────────
+router.include_router(
+    placement_application_router,
+    prefix="/plm",
+    tags=["Placement - Application & Selection"]
+)
+
+# ── Placement - Interview Slot Assignment Routes ────────────────────────────
+router.include_router(
+    interview_slot_router,
+    prefix="/placement/interview",
+    tags=["Placement - Interview Slot Assignment"]
+)
+
+# ── Placement - Offer Management Routes ──────────────────────────────────────
+router.include_router(
+    offer_router,
+    prefix="/placement/offer",
+    tags=["Placement - Offer Management"]
 )
