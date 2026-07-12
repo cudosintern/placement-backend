@@ -269,37 +269,7 @@ class PlacementDriveRound(Base):
 # =============================================================================
 
 
-class PLMApplication(Base):
-    """
-    Records a student's application to a placement drive.
-
-    status values (matches SQL ENUM):
-        APPLIED       – freshly submitted
-        SHORTLISTED   – TPO shortlisted
-        WAITLISTED    – on waitlist
-        IN_PROCESS    – actively in interview rounds
-        OFFERED       – received offer
-        REJECTED      – rejected by company / TPO
-        WITHDRAWN     – student withdrew
-
-    Links:
-        drive_id   → plm_drive.drive_id
-        profile_id → plm_student_profile.profile_id
-        resume_id  → plm_student_resume.resume_id (optional)
-    """
-
-    __tablename__ = "plm_application"
-
-    application_id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id      = Column(Integer, nullable=False, default=1)
-    drive_id       = Column(Integer, nullable=False)   # FK → plm_drive
-    profile_id     = Column(Integer, nullable=False)   # FK → plm_student_profile
-    resume_id      = Column(Integer, nullable=True)    # FK → plm_student_resume (optional)
-    applied_at     = Column(DateTime, nullable=True, default=datetime.now)
-    status         = Column(
-        String(20), nullable=False, default="APPLIED"
-    )  # APPLIED | SHORTLISTED | WAITLISTED | IN_PROCESS | OFFERED | REJECTED | WITHDRAWN
-    is_eligible    = Column(SmallInteger, nullable=False, default=1)  # 1=Yes, 0=No
+# PLMApplication is mapped to PlacementApplication (defined below) for unified table definition
 
 
 # =============================================================================
@@ -429,7 +399,7 @@ class PlacementApplication(Base):
     __tablename__ = "plm_application"
 
     application_id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, nullable=False)
+    tenant_id = Column(Integer, nullable=False, default=1)
     drive_id = Column(Integer, ForeignKey("plm_drive.drive_id"), nullable=False)
     profile_id = Column(Integer, ForeignKey("plm_student_profile.profile_id"), nullable=False)
     resume_id = Column(Integer, ForeignKey("plm_student_resume.resume_id"), nullable=True)
@@ -441,6 +411,10 @@ class PlacementApplication(Base):
     drive = relationship("PlacementDrive", foreign_keys=[drive_id])
     profile = relationship("PLMStudentProfile", foreign_keys=[profile_id])
     resume = relationship("PLMStudentResume", foreign_keys=[resume_id])
+
+
+# Alias PLMApplication to PlacementApplication to resolve duplicate table mapping while retaining backward compatibility
+PLMApplication = PlacementApplication
 
 
 class PlacementShortlist(Base):
