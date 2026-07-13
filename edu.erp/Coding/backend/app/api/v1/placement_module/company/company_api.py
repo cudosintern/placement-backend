@@ -138,7 +138,7 @@ def get_company_detail(
             drives_data.append({
                 "drive_id": d.drive_id,
                 "drive_name": d.drive_name,
-                "academic_year": d.academic_year,
+                "academic_year": str(d.create_date.year) if d.create_date else "2026",
                 "status": d.status,
                 "students_passed": [
                     {
