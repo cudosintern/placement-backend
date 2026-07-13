@@ -460,6 +460,12 @@ def generate_offer_letter(
         if not offer:
             raise HTTPException(status_code=404, detail="Offer record not found.")
 
+        if offer.status != "Accepted":
+            raise HTTPException(
+                status_code=400,
+                detail="Offer letter can only be downloaded after the candidate accepts the offer."
+            )
+
         drive = db.query(PlacementDrive).filter(PlacementDrive.drive_id == offer.drive_id).first()
         company = db.query(PlacementCompany).filter(PlacementCompany.company_id == drive.company_id).first()
         profile = db.query(PLMStudentProfile).filter(PLMStudentProfile.profile_id == offer.profile_id).first()
