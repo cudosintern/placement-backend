@@ -362,6 +362,16 @@ def deactivate_company(
         if company.status == 0:
             return returnException("Company is already inactive.")
 
+        # Check if there are any active/ongoing placement drives for this company
+        active_drives = db.query(PlacementDrive).filter(
+            PlacementDrive.company_id == payload.company_id,
+            PlacementDrive.status.in_([0, 1, 2]) # 0=Draft, 1=Scheduled, 2=Active
+        ).first()
+        if active_drives:
+            return returnException(
+                f"Cannot deactivate company. An active placement drive '{active_drives.drive_name}' is currently ongoing for this company."
+            )
+
         company.status = 0
         company.modified_by = current_user.get("user_id", 1)
         company.modify_date = datetime.now()
