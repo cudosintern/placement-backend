@@ -5806,8 +5806,8 @@ class IEMSPlacementCompany(Base):
     
 from app.db.placement_models import PlacementCompany
 
-class IEMSPlacementContact(Base):
-    __tablename__ = 'iems_placement_contact'
+class PLMCompanyContact(Base):
+    __tablename__ = 'plm_company_contact'
 
     contact_id = Column(Integer, primary_key=True, autoincrement=True)
     company_id = Column(Integer, ForeignKey('plm_company.company_id', ondelete='CASCADE'), nullable=False)
@@ -5817,7 +5817,7 @@ class IEMSPlacementContact(Base):
     phone = Column(String(20), nullable=True)
     designation_id = Column(MYSQL_INTEGER(unsigned=True), ForeignKey('iems_user_designation.designation_id'), nullable=True)
     is_primary = Column(TINYINT, default=0)
-    status = Column(TINYINT, default=1)
+    is_active = Column(TINYINT, default=1)
     org_id = Column(Integer, nullable=True)
     created_by = Column(Integer, nullable=True)
     modified_by = Column(Integer, nullable=True)

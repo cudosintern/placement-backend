@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.db.models import IEMSPlacementContact, IEMSUserDesignation
+from app.db.models import PLMCompanyContact, IEMSUserDesignation
 from app.utils.auth_helper import get_current_user
 from app.utils.http_return_helper import returnException, returnSuccess
 from app.api.v1.placement_module.contact.contact_schema import (
@@ -19,7 +19,7 @@ router = APIRouter()
 
 # ─── Helper ────────────────────────────────────────────────────────────────────
 
-def _contact_to_dict(c: IEMSPlacementContact) -> dict:
+def _contact_to_dict(c: PLMCompanyContact) -> dict:
     return {
         "contact_id": c.contact_id,
         "company_id": c.company_id,
@@ -31,7 +31,7 @@ def _contact_to_dict(c: IEMSPlacementContact) -> dict:
         "designation_id": c.designation_id,
         "designation_name": c.designation.designation_name if c.designation else None,
         "is_primary": c.is_primary,
-        "status": c.status,
+        "is_active": c.is_active,
         "created_date": c.created_date,
         "modified_date": c.modified_date,
     }
@@ -47,16 +47,16 @@ def get_contact_list(
     db: Session = Depends(get_db),
 ):
     try:
-        query = db.query(IEMSPlacementContact).filter(
-            IEMSPlacementContact.org_id == org_id,
-            IEMSPlacementContact.status == 1,
+        query = db.query(PLMCompanyContact).filter(
+            PLMCompanyContact.org_id == org_id,
+            PLMCompanyContact.is_active == 1,
         )
         if company_id is not None:
-            query = query.filter(IEMSPlacementContact.company_id == company_id)
+            query = query.filter(PLMCompanyContact.company_id == company_id)
 
         contacts = query.order_by(
-            IEMSPlacementContact.is_primary.desc(),
-            IEMSPlacementContact.first_name,
+            PLMCompanyContact.is_primary.desc(),
+            PLMCompanyContact.first_name,
         ).all()
 
         return returnSuccess([_contact_to_dict(c) for c in contacts])
@@ -78,13 +78,13 @@ def add_contact(
 
         # Primary contact logic: unset existing primary for this company
         if data.is_primary == 1:
-            db.query(IEMSPlacementContact).filter(
-                IEMSPlacementContact.company_id == data.company_id,
-                IEMSPlacementContact.org_id == org_id,
-                IEMSPlacementContact.is_primary == 1,
+            db.query(PLMCompanyContact).filter(
+                PLMCompanyContact.company_id == data.company_id,
+                PLMCompanyContact.org_id == org_id,
+                PLMCompanyContact.is_primary == 1,
             ).update({"is_primary": 0, "modified_by": user_id, "modified_date": datetime.now()})
 
-        contact = IEMSPlacementContact(
+        contact = PLMCompanyContact(
             company_id=data.company_id,
             first_name=data.first_name.strip(),
             last_name=data.last_name.strip() if data.last_name else None,
@@ -92,7 +92,7 @@ def add_contact(
             phone=data.phone.strip() if data.phone else None,
             designation_id=data.designation_id,
             is_primary=data.is_primary if data.is_primary is not None else 0,
-            status=data.status if data.status is not None else 1,
+            is_active=data.is_active if data.is_active is not None else 1,
             org_id=org_id,
             created_by=user_id,
             created_date=datetime.now(),
@@ -118,9 +118,9 @@ def update_contact(
     try:
         user_id = current_user.get("user_id")
 
-        contact = db.query(IEMSPlacementContact).filter(
-            IEMSPlacementContact.contact_id == data.contact_id,
-            IEMSPlacementContact.org_id == org_id,
+        contact = db.query(PLMCompanyContact).filter(
+            PLMCompanyContact.contact_id == data.contact_id,
+            PLMCompanyContact.org_id == org_id,
         ).first()
 
         if not contact:
@@ -129,11 +129,11 @@ def update_contact(
         # Primary contact logic: unset existing primary for the target company
         target_company_id = data.company_id if data.company_id is not None else contact.company_id
         if data.is_primary == 1:
-            db.query(IEMSPlacementContact).filter(
-                IEMSPlacementContact.company_id == target_company_id,
-                IEMSPlacementContact.org_id == org_id,
-                IEMSPlacementContact.is_primary == 1,
-                IEMSPlacementContact.contact_id != data.contact_id,
+            db.query(PLMCompanyContact).filter(
+                PLMCompanyContact.company_id == target_company_id,
+                PLMCompanyContact.org_id == org_id,
+                PLMCompanyContact.is_primary == 1,
+                PLMCompanyContact.contact_id != data.contact_id,
             ).update({"is_primary": 0, "modified_by": user_id, "modified_date": datetime.now()})
 
         # Apply updates only for fields provided
@@ -151,8 +151,8 @@ def update_contact(
             contact.designation_id = data.designation_id
         if data.is_primary is not None:
             contact.is_primary = data.is_primary
-        if data.status is not None:
-            contact.status = data.status
+        if data.is_active is not None:
+            contact.is_active = data.is_active
 
         contact.modified_by = user_id
         contact.modified_date = datetime.now()
@@ -173,15 +173,15 @@ def delete_contact(
     db: Session = Depends(get_db),
 ):
     try:
-        contact = db.query(IEMSPlacementContact).filter(
-            IEMSPlacementContact.contact_id == data.contact_id,
-            IEMSPlacementContact.org_id == org_id,
+        contact = db.query(PLMCompanyContact).filter(
+            PLMCompanyContact.contact_id == data.contact_id,
+            PLMCompanyContact.org_id == org_id,
         ).first()
 
         if not contact:
             return returnException("Contact not found.")
         
-        if contact.status == 1:
+        if contact.is_active == 1:
             return returnException("Active contacts cannot be deleted.")
 
         db.delete(contact)
