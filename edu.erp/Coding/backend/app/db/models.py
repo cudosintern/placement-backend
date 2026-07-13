@@ -5811,21 +5811,15 @@ class PLMCompanyContact(Base):
 
     contact_id = Column(Integer, primary_key=True, autoincrement=True)
     company_id = Column(Integer, ForeignKey('plm_company.company_id', ondelete='CASCADE'), nullable=False)
-    first_name = Column(String(100), nullable=False)
-    last_name = Column(String(100), nullable=True)
+    name = Column(String(150), nullable=False)
+    designation = Column(String(100), nullable=True)
     email = Column(String(150), nullable=True)
     phone = Column(String(20), nullable=True)
-    designation_id = Column(MYSQL_INTEGER(unsigned=True), ForeignKey('iems_user_designation.designation_id'), nullable=True)
     is_primary = Column(TINYINT, default=0)
     is_active = Column(TINYINT, default=1)
-    org_id = Column(Integer, nullable=True)
-    created_by = Column(Integer, nullable=True)
-    modified_by = Column(Integer, nullable=True)
-    created_date = Column(DateTime, nullable=True)
-    modified_date = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
 
     company = relationship("PlacementCompany")
-    designation = relationship("IEMSUserDesignation", foreign_keys=[designation_id])
 
 
 # Import Placement Module models from placement_models.py to prevent table redefinition errors while maintaining backward compatibility
