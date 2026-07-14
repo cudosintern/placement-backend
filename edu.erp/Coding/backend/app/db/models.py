@@ -5804,26 +5804,10 @@ class IEMSPlacementCompany(Base):
    # modify_date = Column(DateTime, nullable=True)
 
     
-from app.db.placement_models import PlacementCompany
-
-class PLMCompanyContact(Base):
-    __tablename__ = 'plm_company_contact'
-
-    contact_id = Column(Integer, primary_key=True, autoincrement=True)
-    company_id = Column(Integer, ForeignKey('plm_company.company_id', ondelete='CASCADE'), nullable=False)
-    name = Column(String(150), nullable=False)
-    designation = Column(String(100), nullable=True)
-    email = Column(String(150), nullable=True)
-    phone = Column(String(20), nullable=True)
-    is_primary = Column(TINYINT, default=0)
-    is_active = Column(TINYINT, default=1)
-    created_at = Column(DateTime, default=datetime.now)
-
-    company = relationship("PlacementCompany")
-
-
 # Import Placement Module models from placement_models.py to prevent table redefinition errors while maintaining backward compatibility
 from app.db.placement_models import (
+    PlacementCompany,
+    PLMCompanyContact,
     PLMStudentProfile,
     PLMStudentSkill,
     PLMStudentCertification,
