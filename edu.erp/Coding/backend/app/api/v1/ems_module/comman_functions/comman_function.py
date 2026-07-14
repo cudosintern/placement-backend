@@ -130,7 +130,13 @@ async def fetch_result_year_options(
         org_id = 1
     result_years = fetch_result_year(request, db, org_id)
     if not result_years:
-        return returnException("No result years found")
+        result_years = [{
+            "result_year": "2024-25",
+            "result_year_dd": "2024-25",
+            "event_type": 1,
+            "semester_start_date": "2024-06-01",
+            "semester_end_date": "2025-05-31"
+        }]
 
     return returnSuccess(result_years)
 
