@@ -393,21 +393,30 @@ class PLMStudentResume(Base):
 class PlacementInterviewSchedule(Base):
     __tablename__ = "plm_interview_schedule"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    schedule_id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id = Column(Integer, nullable=True, default=1)
     drive_id = Column(Integer, ForeignKey("plm_drive.drive_id", ondelete="CASCADE"), nullable=False)
     round_id = Column(Integer, ForeignKey("plm_drive_round.round_id", ondelete="CASCADE"), nullable=False)
-    venue_type = Column(String(50), nullable=False)  # Online / Offline
+    org_id = Column(Integer, nullable=False, default=1)
+    venue_type = Column(String(50), nullable=True)
     venue_details = Column(Text, nullable=True)
     meeting_link = Column(String(500), nullable=True)
-    interview_date = Column(Date, nullable=False)
-    start_time = Column(Time, nullable=False)
-    end_time = Column(Time, nullable=False)
-    status = Column(TINYINT, default=1)  # 1=Active, 0=Deleted (Soft Delete)
-    org_id = Column(Integer, nullable=False, default=1)
+    scheduled_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    start_time = Column(String(10), nullable=True)
+    end_time = Column(String(10), nullable=True)
+    scheduling_mode = Column(String(30), nullable=True)
+    batch_size = Column(SmallInteger, nullable=True)
+    total_students = Column(Integer, nullable=True)
+    total_slots = Column(Integer, nullable=True)
+    days_required = Column(Integer, nullable=True)
+    interviewer_names = Column(String(500), nullable=True)
+    interviewer_email = Column(String(500), nullable=True)
+    is_active = Column(TINYINT, default=1)
+    status = Column(String(20), nullable=True)
     created_by = Column(Integer, nullable=True)
-    modified_by = Column(Integer, nullable=True)
-    create_date = Column(DateTime, nullable=True, default=datetime.now)
-    modify_date = Column(DateTime, nullable=True, onupdate=datetime.now)
+    created_at = Column(DateTime, nullable=True, default=datetime.now)
+    updated_at = Column(DateTime, nullable=True, onupdate=datetime.now)
 
     # Relationships
     drive = relationship("PlacementDrive", foreign_keys=[drive_id])
@@ -480,16 +489,25 @@ class PlacementInterviewSlot(Base):
     __tablename__ = "plm_interview_slot"
 
     slot_id = Column(Integer, primary_key=True, autoincrement=True)
-    schedule_id = Column(Integer, ForeignKey("plm_interview_schedule.id", ondelete="CASCADE"), nullable=False)
+    schedule_id = Column(Integer, ForeignKey("plm_interview_schedule.schedule_id", ondelete="CASCADE"), nullable=False)
     application_id = Column(Integer, ForeignKey("plm_application.application_id"), nullable=False)
     slot_time = Column(DateTime, nullable=True)
+    batch_number = Column(SmallInteger, nullable=True)
+    seq_number = Column(SmallInteger, nullable=True)
     interviewer_name = Column(String(150), nullable=True)
     interviewer_email = Column(String(150), nullable=True)
     status = Column(String(50), default="SCHEDULED")  # SCHEDULED, COMPLETED, NO_SHOW, CANCELLED
+    notification_sent_at = Column(DateTime, nullable=True)
+    notification_status = Column(String(20), nullable=True)
+    interviewer_id = Column(Integer, nullable=True)
+    student_id = Column(Integer, nullable=True)
+    notification_expires_at = Column(DateTime, nullable=True)
+    contact_id = Column(Integer, ForeignKey("plm_company_contact.contact_id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
     schedule = relationship("PlacementInterviewSchedule", foreign_keys=[schedule_id])
     application = relationship("PlacementApplication", foreign_keys=[application_id])
+    contact = relationship("PLMCompanyContact", foreign_keys=[contact_id])
 
 
 class PlacementRoundResult(Base):
@@ -571,5 +589,20 @@ class PlacementPostPlacement(Base):
 
     # Relationships
     offer = relationship("PlacementOffer", foreign_keys=[offer_id])
+
+
+class PlacementOrgHoliday(Base):
+    __tablename__ = "plm_org_holiday"
+
+    holiday_id = Column(Integer, primary_key=True, autoincrement=True)
+    holiday_date = Column(Date, nullable=False)
+    holiday_name = Column(String(150), nullable=True)
+    holiday_type = Column(String(10), nullable=True)
+    org_id = Column(Integer, nullable=False)
+    is_active = Column(TINYINT, default=1)
+    created_by = Column(Integer, nullable=True)
+    created_at = Column(DateTime, nullable=True, default=datetime.now)
+
+
 
 
