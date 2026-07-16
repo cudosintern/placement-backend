@@ -3,7 +3,7 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 
 
-class ContactCreate(BaseModel):
+class ContactCreate(BaseModel): 
     company_id: int
     first_name: str
     last_name: Optional[str] = None
@@ -11,7 +11,7 @@ class ContactCreate(BaseModel):
     phone: Optional[str] = None
     designation_id: Optional[int] = None
     is_primary: Optional[int] = 0
-    status: Optional[int] = 1
+    is_active: Optional[int] = 1
 
 
 class ContactUpdate(BaseModel):
@@ -23,4 +23,7 @@ class ContactUpdate(BaseModel):
     phone: Optional[str] = None
     designation_id: Optional[int] = None
     is_primary: Optional[int] = None
-    status: Optional[int] = None
+    is_active: Optional[int] = None
+
+class ContactDelete(BaseModel):
+    contact_id: int

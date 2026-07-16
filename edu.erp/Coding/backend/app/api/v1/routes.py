@@ -107,3 +107,14 @@ router.include_router(
     prefix="/placement/student",
     tags=["Placement - Student Drive"],
 )
+
+# ── Placement - Interview Management ─────────────────────────────────────────
+from app.api.v1.placement_module.interview.interview_api import (
+    router as interview_router,
+)
+
+router.include_router(
+    interview_router,
+    prefix="/placement/interview",
+    tags=["Placement - Interview"],
+)
