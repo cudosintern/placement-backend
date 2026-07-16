@@ -68,6 +68,7 @@ class PLMCompanyContact(Base):
     email = Column(String(150), nullable=True)
     phone = Column(String(20), nullable=True)
     is_primary = Column(TINYINT, default=0)
+    is_interviewer = Column(TINYINT, default=0)
     is_active = Column(TINYINT, default=1)
     created_at = Column(DateTime, default=datetime.now)
 

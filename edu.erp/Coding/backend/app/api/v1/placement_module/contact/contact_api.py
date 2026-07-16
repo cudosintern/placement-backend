@@ -41,6 +41,7 @@ def _contact_to_dict(c: PLMCompanyContact, db: Session) -> dict:
         "designation_id": designation_id,
         "designation_name": designation_name,
         "is_primary": c.is_primary,
+        "is_interviewer": c.is_interviewer,
         "is_active": c.is_active,
         "created_date": str(c.created_at) if c.created_at else None,
         "modified_date": None,
@@ -69,8 +70,13 @@ def get_contact_list(
                 IEMSUserDesignation.designation_name.ilike("%interviewer%")
             ).all()
             interviewer_ids = [str(r[0]) for r in interviewer_designations]
+            
+            from sqlalchemy import or_
             query = query.filter(
-                PLMCompanyContact.designation.in_(interviewer_ids)
+                or_(
+                    PLMCompanyContact.is_interviewer == 1,
+                    PLMCompanyContact.designation.in_(interviewer_ids)
+                )
             )
 
         contacts = query.order_by(
@@ -114,6 +120,7 @@ def add_contact(
             phone=data.phone.strip() if data.phone else None,
             designation=designation_val,
             is_primary=data.is_primary if data.is_primary is not None else 0,
+            is_interviewer=data.is_interviewer if data.is_interviewer is not None else 0,
             is_active=data.is_active if data.is_active is not None else 1,
             created_at=datetime.now(),
         )
@@ -167,6 +174,8 @@ def update_contact(
             contact.designation = str(data.designation_id)
         if data.is_primary is not None:
             contact.is_primary = data.is_primary
+        if data.is_interviewer is not None:
+            contact.is_interviewer = data.is_interviewer
         if data.is_active is not None:
             contact.is_active = data.is_active
 
