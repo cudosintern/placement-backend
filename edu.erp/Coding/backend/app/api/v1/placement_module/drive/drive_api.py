@@ -22,6 +22,7 @@ Status codes (plm_drive.status):
 
 from datetime import date, datetime
 from typing import List, Optional
+from pydantic import BaseModel
 
 from app.api.v1.placement_module.drive.drive_schema import (
     DriveCreate,
@@ -863,6 +864,7 @@ def get_drive_applications(
                 "resume_url": resume_info["file_path"] if resume_info else None,
                 "applied_at": str(app.applied_at) if app.applied_at else None,
                 "status": app.status,
+                "override_reason": app.override_reason or None,
             })
 
         return returnSuccess(
@@ -933,21 +935,20 @@ def shortlist_applications(
                 )
 
         # Update application statuses
+        # Accept both APPLIED and WAITLISTED so TPO can manually promote
+        # waitlisted students.
         updated = (
             db.query(PLMApplication)
             .filter(
                 PLMApplication.application_id.in_(payload.application_ids),
                 PLMApplication.drive_id == payload.drive_id,
-                PLMApplication.status == "APPLIED",
+                PLMApplication.status.in_(["APPLIED", "WAITLISTED"]),
             )
             .all()
         )
 
-        for app in updated:
-            app.status = "SHORTLISTED"
-
-        # Refresh shortlisted_count on the drive
-        new_count = (
+        # Capture the current shortlisted count BEFORE updating statuses
+        current_shortlisted = (
             db.query(func.count(PLMApplication.application_id))
             .filter(
                 PLMApplication.drive_id == payload.drive_id,
@@ -955,9 +956,13 @@ def shortlist_applications(
             )
             .scalar()
             or 0
-        ) + len(updated)
+        )
 
-        drive.shortlisted_count = new_count
+        for app in updated:
+            app.status = "SHORTLISTED"
+
+        # shortlisted_count = existing shortlisted + newly shortlisted
+        drive.shortlisted_count = current_shortlisted + len(updated)
         drive.modify_date = datetime.now()
 
         db.commit()
@@ -981,6 +986,28 @@ class RejectPayload(_PydanticBase):
     reason: Optional[str] = None
 
 
+def _promote_waitlisted(db: Session, drive: PlacementDrive):
+    """
+    Finds the top WAITLISTED candidate by CGPA and promotes them to SHORTLISTED.
+    Adjusts drive.shortlisted_count accordingly.
+    """
+    from app.db.placement_models import PLMApplication, PLMStudentProfile
+    top_waitlisted = (
+        db.query(PLMApplication)
+        .join(PLMStudentProfile, PLMStudentProfile.profile_id == PLMApplication.profile_id)
+        .filter(
+            PLMApplication.drive_id == drive.drive_id,
+            PLMApplication.status == "WAITLISTED",
+        )
+        .order_by(PLMStudentProfile.current_cgpa.desc())
+        .first()
+    )
+    if top_waitlisted:
+        top_waitlisted.status = "SHORTLISTED"
+        drive.shortlisted_count = (drive.shortlisted_count or 0) + 1
+        db.flush()
+
+
 @router.post("/applications/reject")
 def reject_application(
     payload: RejectPayload,
@@ -1000,12 +1027,20 @@ def reject_application(
         if not app:
             return returnException(f"Application {payload.application_id} not found.")
 
-        if app.status in ("SHORTLISTED", "OFFERED"):
+        if app.status in ("OFFERED",):
             return returnException(
                 f"Cannot reject an application that is already '{app.status}'."
             )
 
+        was_shortlisted = (app.status == "SHORTLISTED")
         app.status = "REJECTED"
+        
+        if was_shortlisted:
+            drive = db.query(PlacementDrive).filter(PlacementDrive.drive_id == app.drive_id).first()
+            if drive:
+                drive.shortlisted_count = max(0, (drive.shortlisted_count or 1) - 1)
+                _promote_waitlisted(db, drive)
+
         db.commit()
 
         return returnSuccess(
@@ -1018,14 +1053,74 @@ def reject_application(
 
 
 # ===========================================================================
-# 11. POST /placement/drive/applications/auto-shortlist — Auto shortlist
-#     Logic:
-#       1. Check vacancy < applied (prerequisite)
-#       2. Filter applicants by eligible branches + min_cgpa + max_backlogs
-#       3. Sort eligible applicants by CGPA DESC
-#       4. Top N (N = vacancy_count) → SHORTLISTED
-#       5. Rest (eligible but outside cap + ineligible) → WAITLISTED
-#       6. Update drive.shortlisted_count
+# 11. POST /placement/drive/applications/waitlist — SHORTLISTED → WAITLISTED
+# ===========================================================================
+
+
+class WaitlistPayload(_PydanticBase):
+    application_id: int
+
+
+@router.post("/applications/waitlist")
+def waitlist_application(
+    payload: WaitlistPayload,
+    current_user: dict = Depends(get_current_user),
+    org_id: Optional[int] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Move a SHORTLISTED application back to WAITLISTED (TPO manual demotion).
+    Decrements the drive's shortlisted_count.
+    """
+    try:
+        from app.db.placement_models import PLMApplication
+
+        app = (
+            db.query(PLMApplication)
+            .filter(PLMApplication.application_id == payload.application_id)
+            .first()
+        )
+        if not app:
+            return returnException(f"Application {payload.application_id} not found.")
+
+        if app.status != "SHORTLISTED":
+            return returnException(
+                f"Only SHORTLISTED applications can be moved to waitlist. "
+                f"Current status: '{app.status}'."
+            )
+
+        app.status = "WAITLISTED"
+
+        # Decrement shortlisted_count on the drive
+        drive = (
+            db.query(PlacementDrive)
+            .filter(PlacementDrive.drive_id == app.drive_id)
+            .first()
+        )
+        if drive and drive.shortlisted_count and drive.shortlisted_count > 0:
+            drive.shortlisted_count = drive.shortlisted_count - 1
+            drive.modify_date = datetime.now()
+
+        db.commit()
+
+        return returnSuccess(
+            {"application_id": app.application_id, "status": "WAITLISTED"},
+            message="Application moved to waitlist.",
+        )
+    except Exception as e:
+        db.rollback()
+        return returnException(str(e))
+
+
+# ===========================================================================
+# 12. POST /placement/drive/applications/auto-shortlist — Auto shortlist
+#     Two-phase priority logic:
+#       PHASE 1: Branch-eligible students (APPLIED/WAITLISTED, backlogs OK)
+#         → sorted by CGPA DESC, shortlisted first up to vacancy.
+#       PHASE 2: Other-branch students with CGPA >= min_cgpa (backlogs OK)
+#         → fill remaining slots sorted by CGPA DESC (9.3 → 9.0 → 8.7…)
+#         until shortlisted == vacancy.
+#       Everyone else → WAITLISTED.
 # ===========================================================================
 
 
@@ -1068,8 +1163,7 @@ def auto_shortlist_applications(
             return returnException(f"Drive {payload.drive_id} not found.")
 
         vacancy = drive.vacancy_count
-        if vacancy is None or vacancy <= 0:
-            return returnException("Drive has no vacancy count set.")
+        is_unlimited = (vacancy is None or vacancy <= 0)
 
         # 2. Count TOTAL applications
         applied_count = (
@@ -1081,7 +1175,7 @@ def auto_shortlist_applications(
             or 0
         )
 
-        if applied_count <= vacancy:
+        if not is_unlimited and applied_count <= vacancy:
             return returnException(
                 f"Auto-shortlisting requires more applicants than vacancies. "
                 f"Applied: {applied_count}, Vacancy: {vacancy}. "
@@ -1099,20 +1193,32 @@ def auto_shortlist_applications(
         min_cgpa = float(drive.min_cgpa) if drive.min_cgpa is not None else 0.0
         max_backlogs = drive.max_backlogs if drive.max_backlogs is not None else 999
 
-        # 4. Fetch all APPLIED applicants with profile + student info
+        # 4. Fetch all APPLIED + WAITLISTED applicants with profile + student info.
+        #    WAITLISTED are included so Phase 2 can promote other-branch high-CGPA
+        #    students on re-runs when some slots remain unfilled.
         rows = (
             db.query(PLMApplication, PLMStudentProfile, IEMStudents)
             .join(PLMStudentProfile, PLMStudentProfile.profile_id == PLMApplication.profile_id)
             .join(IEMStudents, IEMStudents.student_id == PLMStudentProfile.student_id)
             .filter(
                 PLMApplication.drive_id == payload.drive_id,
-                PLMApplication.status == "APPLIED",
+                PLMApplication.status.in_(["APPLIED", "WAITLISTED"]),
             )
             .all()
         )
 
-        # 5. Split into eligible vs ineligible
-        eligible = []
+        if not rows:
+            return returnException(
+                "No processable candidates found (all are already shortlisted, offered, or rejected)."
+            )
+
+        # 5. Split into two pools (two-phase priority):
+        #    Pool A (Phase 1): branch-eligible students (backlogs OK)
+        #      → shortlisted first, sorted by CGPA DESC, up to remaining_vacancy
+        #    Pool B (Phase 2): other-branch students with CGPA >= min_cgpa (backlogs OK)
+        #      → fill remaining slots, sorted by CGPA DESC (9.3 → 9.0 → 8.7…)
+        pool_a = []   # (app, cgpa) — branch-eligible
+        pool_b = []   # (app, cgpa) — other-branch, high CGPA
         ineligible_ids = []
 
         for app, profile, student in rows:
@@ -1120,17 +1226,21 @@ def auto_shortlist_applications(
             backlogs = int(profile.backlogs or 0)
             dept_id = student.department_id
 
-            branch_ok = (dept_id in eligible_dept_ids) if eligible_dept_ids else True
-            cgpa_ok = cgpa >= min_cgpa
             backlogs_ok = backlogs <= max_backlogs
+            branch_ok = (dept_id in eligible_dept_ids) if eligible_dept_ids else True
 
-            if branch_ok and cgpa_ok and backlogs_ok:
-                eligible.append((app, cgpa))
+            if not backlogs_ok:
+                ineligible_ids.append(app.application_id)
+            elif branch_ok:
+                pool_a.append((app, cgpa))   # Phase 1 — eligible branch, always priority
+            elif cgpa >= min_cgpa:
+                pool_b.append((app, cgpa))   # Phase 2 — other branch, CGPA fill-up
             else:
                 ineligible_ids.append(app.application_id)
 
-        # 6. Sort eligible by CGPA DESC
-        eligible.sort(key=lambda x: x[1], reverse=True)
+        # 6. Sort both pools by CGPA DESC
+        pool_a.sort(key=lambda x: x[1], reverse=True)
+        pool_b.sort(key=lambda x: x[1], reverse=True)
 
         # 6b. Check remaining vacancy
         current_shortlisted = (
@@ -1143,15 +1253,49 @@ def auto_shortlist_applications(
             or 0
         )
         
-        remaining_vacancy = vacancy - current_shortlisted
-        if remaining_vacancy <= 0:
-            return returnException("Vacancy cap has already been reached. Cannot auto-shortlist further.")
+        remaining_vacancy = None
+        if not is_unlimited:
+            remaining_vacancy = vacancy - current_shortlisted
+            if remaining_vacancy <= 0:
+                return returnException("Vacancy cap has already been reached. Cannot auto-shortlist further.")
 
-        to_shortlist = [app for app, _ in eligible[:remaining_vacancy]]
-        to_waitlist_from_eligible = [app for app, _ in eligible[remaining_vacancy:]]
+        shortlist_ids = []
+        waitlist_ids = list(ineligible_ids)
 
-        shortlist_ids = [a.application_id for a in to_shortlist]
-        waitlist_ids = [a.application_id for a in to_waitlist_from_eligible] + ineligible_ids
+        # ── Phase 1: Shortlist from eligible-branch pool ──────────────────────
+        if is_unlimited:
+            phase1_picks = pool_a
+            phase1_leftover = []
+        else:
+            phase1_picks = pool_a[:remaining_vacancy]
+            phase1_leftover = pool_a[remaining_vacancy:]
+            
+        for app, _ in phase1_picks:
+            shortlist_ids.append(app.application_id)
+        for app, _ in phase1_leftover:
+            waitlist_ids.append(app.application_id)
+
+        # ── Phase 2: Fill remaining slots from other-branch / CGPA pool ───────
+        phase2_count = 0
+        if is_unlimited:
+            phase2_picks = pool_b
+            phase2_leftover = []
+            phase2_count = len(phase2_picks)
+            for app, _ in phase2_picks:
+                shortlist_ids.append(app.application_id)
+        else:
+            slots_left = remaining_vacancy - len(shortlist_ids)
+            if slots_left > 0 and pool_b:
+                phase2_picks = pool_b[:slots_left]
+                phase2_leftover = pool_b[slots_left:]
+                phase2_count = len(phase2_picks)
+                for app, _ in phase2_picks:
+                    shortlist_ids.append(app.application_id)
+                for app, _ in phase2_leftover:
+                    waitlist_ids.append(app.application_id)
+            else:
+                for app, _ in pool_b:
+                    waitlist_ids.append(app.application_id)
 
         # 7. Bulk update statuses
         if shortlist_ids:
@@ -1164,26 +1308,123 @@ def auto_shortlist_applications(
                 PLMApplication.application_id.in_(waitlist_ids)
             ).update({"status": "WAITLISTED"}, synchronize_session=False)
 
-        # 8. Update drive shortlisted_count
-        drive.shortlisted_count = len(shortlist_ids)
+        # 8. Update drive shortlisted_count (add newly shortlisted to existing count)
+        drive.shortlisted_count = current_shortlisted + len(shortlist_ids)
         drive.modify_date = datetime.now()
 
         db.commit()
 
+        phase1_count = len(phase1_picks) if is_unlimited else len(phase1_picks)
+
         return returnSuccess(
             {
                 "shortlisted": len(shortlist_ids),
+                "shortlisted_phase1_branch": phase1_count,
+                "shortlisted_phase2_cgpa": phase2_count,
                 "waitlisted": len(waitlist_ids),
-                "eligible_count": len(eligible),
-                "ineligible_count": len(ineligible_ids),
                 "vacancy": vacancy,
-                "applied_processed": applied_count,
+                "applied_processed": len(rows),
             },
             message=(
                 f"Auto-shortlisting complete. {len(shortlist_ids)} student(s) shortlisted "
-                f"(top by CGPA from eligible branches). "
-                f"{len(waitlist_ids)} moved to waiting list."
+                f"({phase1_count} from eligible branches"
+                + (f", {phase2_count} filled from other branches by CGPA" if phase2_count > 0 else "")
+                + f"). {len(waitlist_ids)} moved to waiting list."
             ),
+        )
+    except Exception as e:
+        db.rollback()
+        return returnException(str(e))
+
+
+# ===========================================================================
+# 12. POST /placement/drive/applications/override-shortlist
+# ===========================================================================
+class OverrideShortlistPayload(BaseModel):
+    application_id: int
+    reason: Optional[str] = None
+
+@router.post("/applications/override-shortlist")
+def override_shortlist_application(
+    payload: OverrideShortlistPayload,
+    current_user: dict = Depends(get_current_user),
+    org_id: Optional[int] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Promote a WAITLISTED student to SHORTLISTED bypassing vacancy limits.
+    Requires providing a reason (justification).
+    """
+    try:
+        from app.db.placement_models import PLMApplication
+        
+        app = (
+            db.query(PLMApplication)
+            .filter(PLMApplication.application_id == payload.application_id)
+            .first()
+        )
+        if not app:
+            return returnException(f"Application {payload.application_id} not found.")
+
+        if app.status != "WAITLISTED":
+            return returnException(f"Can only override waitlisted applications (current: {app.status}).")
+
+        app.status = "SHORTLISTED"
+        app.override_reason = payload.reason
+        
+        drive = db.query(PlacementDrive).filter(PlacementDrive.drive_id == app.drive_id).first()
+        if drive:
+            drive.shortlisted_count = (drive.shortlisted_count or 0) + 1
+
+        db.commit()
+
+        return returnSuccess(
+            {"application_id": app.application_id, "status": "SHORTLISTED"},
+            message="Student shortlisted via override.",
+        )
+    except Exception as e:
+        db.rollback()
+        return returnException(str(e))
+
+
+# ===========================================================================
+# 13. POST /placement/drive/applications/override-reject
+# ===========================================================================
+class OverrideRejectPayload(BaseModel):
+    application_id: int
+    reason: Optional[str] = None
+
+@router.post("/applications/override-reject")
+def override_reject_application(
+    payload: OverrideRejectPayload,
+    current_user: dict = Depends(get_current_user),
+    org_id: Optional[int] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Reject a WAITLISTED student permanently from the override page.
+    """
+    try:
+        from app.db.placement_models import PLMApplication
+        
+        app = (
+            db.query(PLMApplication)
+            .filter(PLMApplication.application_id == payload.application_id)
+            .first()
+        )
+        if not app:
+            return returnException(f"Application {payload.application_id} not found.")
+
+        if app.status != "WAITLISTED":
+            return returnException(f"Can only reject waitlisted applications via this endpoint (current: {app.status}).")
+
+        app.status = "REJECTED"
+        app.override_reason = payload.reason
+        db.commit()
+
+        return returnSuccess(
+            {"application_id": app.application_id, "status": "REJECTED"},
+            message="Student override request rejected.",
         )
     except Exception as e:
         db.rollback()
