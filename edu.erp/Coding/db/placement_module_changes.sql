@@ -90,3 +90,57 @@ END //
 DELIMITER ;
 CALL AddCompanyTypeColumn();
 DROP PROCEDURE IF EXISTS AddCompanyTypeColumn;
+
+-- =========================================================================
+-- SECTION 3: YOUR MODULES INTEGRATION BUG FIXES
+-- Safe and conditional alters/creations for Company & Notification tables.
+-- =========================================================================
+
+-- Procedure to rename columns safely in plm_notification_template
+DROP PROCEDURE IF EXISTS FixNotificationTemplateColumns;
+DELIMITER //
+CREATE PROCEDURE FixNotificationTemplateColumns()
+BEGIN
+    IF EXISTS(
+        SELECT * FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'plm_notification_template'
+        AND COLUMN_NAME = 'template_id'
+    ) THEN
+        ALTER TABLE plm_notification_template CHANGE COLUMN template_id id INT AUTO_INCREMENT;
+    END IF;
+END //
+DELIMITER ;
+CALL FixNotificationTemplateColumns();
+DROP PROCEDURE IF EXISTS FixNotificationTemplateColumns;
+
+-- Procedure to rename columns safely in plm_notification_log
+DROP PROCEDURE IF EXISTS FixNotificationLogColumns;
+DELIMITER //
+CREATE PROCEDURE FixNotificationLogColumns()
+BEGIN
+    IF EXISTS(
+        SELECT * FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'plm_notification_log'
+        AND COLUMN_NAME = 'log_id'
+    ) THEN
+        ALTER TABLE plm_notification_log CHANGE COLUMN log_id id INT AUTO_INCREMENT;
+    END IF;
+END //
+DELIMITER ;
+CALL FixNotificationLogColumns();
+DROP PROCEDURE IF EXISTS FixNotificationLogColumns;
+
+-- Create missing table plm_notification_event_type if not exists
+CREATE TABLE IF NOT EXISTS `plm_notification_event_type` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `event_code` VARCHAR(100) NOT NULL,
+  `event_name` VARCHAR(255) NOT NULL,
+  `status` TINYINT DEFAULT 1,
+  `org_id` INT DEFAULT 1,
+  `created_by` INT DEFAULT NULL,
+  `modified_by` INT DEFAULT NULL,
+  `create_date` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `modify_date` DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
+);
