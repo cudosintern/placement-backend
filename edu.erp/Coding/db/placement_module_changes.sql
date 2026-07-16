@@ -92,3 +92,21 @@ MODIFY COLUMN designation VARCHAR(100) DEFAULT NULL;
 -- Add is_active column
 ALTER TABLE plm_company_contact
 ADD COLUMN is_active TINYINT(1) DEFAULT 1;
+
+-- Add company_type column to plm_company if it does not exist
+DROP PROCEDURE IF EXISTS AddCompanyTypeColumn;
+DELIMITER //
+CREATE PROCEDURE AddCompanyTypeColumn()
+BEGIN
+    IF NOT EXISTS(
+        SELECT * FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'plm_company'
+        AND COLUMN_NAME = 'company_type'
+    ) THEN
+        ALTER TABLE plm_company ADD COLUMN company_type VARCHAR(100) DEFAULT NULL AFTER company_name;
+    END IF;
+END //
+DELIMITER ;
+CALL AddCompanyTypeColumn();
+DROP PROCEDURE IF EXISTS AddCompanyTypeColumn;
