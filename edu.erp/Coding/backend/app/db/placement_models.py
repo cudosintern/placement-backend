@@ -315,7 +315,10 @@ class PLMStudentProfile(Base):
     created_date = Column(DateTime, nullable=True)
     modified_date = Column(DateTime, nullable=True)
 
-
+    # Columns added for Offer Management
+    placement_status = Column(String(50), nullable=False, default="UNPLACED")
+    is_locked = Column(TINYINT, nullable=False, default=0)
+    active_offer_count = Column(TINYINT, nullable=True, default=0)
 
     # Relationships
     student = relationship("IEMStudents", foreign_keys=[student_id])
@@ -598,7 +601,3 @@ class PlacementOrgHoliday(Base):
     is_active = Column(TINYINT, default=1)
     created_by = Column(Integer, nullable=True)
     created_at = Column(DateTime, nullable=True, default=datetime.now)
-
-
-
-

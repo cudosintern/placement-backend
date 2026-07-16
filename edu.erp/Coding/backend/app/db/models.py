@@ -2,7 +2,8 @@ from sqlalchemy import DECIMAL, Integer, TIMESTAMP, Numeric, PrimaryKeyConstrain
     Integer, SmallInteger, String, Date, ForeignKey, Boolean, CHAR, DateTime, Time, text, Enum, BigInteger
 from sqlalchemy.orm import relationship, synonym
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.dialects.mysql import MEDIUMINT, TINYINT, YEAR, INTEGER as MySQLInteger
+from sqlalchemy.dialects.mysql import INTEGER as MYSQL_INTEGER, MEDIUMINT, TINYINT, YEAR
+MySQLInteger = MYSQL_INTEGER
 
 from datetime import datetime
 from sqlalchemy.sql import func
@@ -5760,30 +5761,56 @@ class IEMSPlacementCompany(Base):
     created_date = Column(DateTime, nullable=True)
     modified_date = Column(DateTime, nullable=True)
 
-    contacts = relationship("IEMSPlacementContact", back_populates="company", cascade="all, delete-orphan")
+    # contacts = relationship("IEMSPlacementContact", back_populates="company", cascade="all, delete-orphan")
 
+#class IEMSPlacementNotificationTemplate(Base):
+ #   __tablename__ = 'plm_notification_template'
+#
+ #   id = Column(Integer, primary_key=True, autoincrement=True)
+   # notification_title = Column(Text, nullable=False)
+    #notification_message = Column(Text, nullable=False)
+   # notification_type = Column(String(100), nullable=False)
+    
+   # event_type_id = Column(Integer, nullable=True)
 
-class IEMSPlacementContact(Base):
-    __tablename__ = 'iems_placement_contact'
+   # org_id = Column(Integer, nullable=True)
+   # status = Column(TINYINT, default=1)
 
-    contact_id = Column(Integer, primary_key=True, autoincrement=True)
-    company_id = Column(Integer, ForeignKey('iems_placement_company.company_id', ondelete='CASCADE'), nullable=False)
-    first_name = Column(String(100), nullable=False)
-    last_name = Column(String(100), nullable=True)
-    email = Column(String(150), nullable=True)
-    phone = Column(String(20), nullable=True)
-    designation_id = Column(Integer, ForeignKey('iems_user_designation.designation_id'), nullable=True)
-    is_primary = Column(TINYINT, default=0)
-    status = Column(TINYINT, default=1)
-    org_id = Column(Integer, nullable=True)
-    created_by = Column(Integer, nullable=True)
-    modified_by = Column(Integer, nullable=True)
-    created_date = Column(DateTime, nullable=True)
-    modified_date = Column(DateTime, nullable=True)
+   # created_by = Column(Integer, nullable=True)
+   # modified_by = Column(Integer, nullable=True)
 
-    company = relationship("IEMSPlacementCompany", back_populates="contacts")
-    designation = relationship("IEMSUserDesignation", foreign_keys=[designation_id])
+   # create_date = Column(DateTime, nullable=True)
+   # modify_date = Column(DateTime, nullable=True)
+    
+#class IEMSPlacementNotificationEventType(Base):
+#__tablename__ = 'plm_notification_event_type'//
 
+ #   id = Column(Integer, primary_key=True, autoincrement=True)
 
-# NOTE: PLMStudentProfile, PLMStudentSkill, PLMStudentCertification, PLMStudentResume
-# have been moved to placement_models.py
+  #  event_code = Column(String(100), nullable=False)
+
+   # event_name = Column(String(255), nullable=False)
+
+   # status = Column(TINYINT, default=1)
+
+  #  org_id = Column(Integer, nullable=True)
+
+ #   created_by = Column(Integer, nullable=True)
+
+  #  modified_by = Column(Integer, nullable=True)
+
+   # create_date = Column(DateTime, nullable=True)
+
+   # modify_date = Column(DateTime, nullable=True)
+
+    
+# Import Placement Module models from placement_models.py to prevent table redefinition errors while maintaining backward compatibility
+from app.db.placement_models import (
+    PlacementCompany,
+    PLMCompanyContact,
+    PLMStudentProfile,
+    PLMStudentSkill,
+    PLMStudentCertification,
+    PLMStudentResume
+)
+

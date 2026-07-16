@@ -20,7 +20,16 @@ router = APIRouter()
 
 # ─── Helper ────────────────────────────────────────────────────────────────────
 
-def _contact_to_dict(c: PLMCompanyContact) -> dict:
+def _contact_to_dict(c: PLMCompanyContact, db: Session) -> dict:
+    designation_id = 0
+    designation_name = c.designation or ""
+    
+    if c.designation and c.designation.isdigit():
+        designation_id = int(c.designation)
+        des_rec = db.query(IEMSUserDesignation).filter(IEMSUserDesignation.designation_id == designation_id).first()
+        if des_rec:
+            designation_name = des_rec.designation_name
+
     return {
         "contact_id": c.contact_id,
         "company_id": c.company_id,
@@ -29,8 +38,8 @@ def _contact_to_dict(c: PLMCompanyContact) -> dict:
         "last_name": "",
         "email": c.email,
         "phone": c.phone,
-        "designation_id": 0,
-        "designation_name": c.designation,
+        "designation_id": designation_id,
+        "designation_name": designation_name,
         "is_primary": c.is_primary,
         "is_active": c.is_active,
         "created_date": str(c.created_at) if c.created_at else None,
@@ -55,10 +64,13 @@ def get_contact_list(
         if company_id is not None:
             query = query.filter(PLMCompanyContact.company_id == company_id)
         if interviewer_only == 1:
-            # Filter contacts whose designation contains 'interviewer' (case-insensitive)
-            # Matches "Interviewer", "Technical Interviewer", "Senior Interviewer", etc.
+            # Find all designation IDs that match 'interviewer' (case-insensitive)
+            interviewer_designations = db.query(IEMSUserDesignation.designation_id).filter(
+                IEMSUserDesignation.designation_name.ilike("%interviewer%")
+            ).all()
+            interviewer_ids = [str(r[0]) for r in interviewer_designations]
             query = query.filter(
-                PLMCompanyContact.designation.ilike("%interviewer%")
+                PLMCompanyContact.designation.in_(interviewer_ids)
             )
 
         contacts = query.order_by(
@@ -66,7 +78,7 @@ def get_contact_list(
             PLMCompanyContact.name,
         ).all()
 
-        return returnSuccess([_contact_to_dict(c) for c in contacts])
+        return returnSuccess([_contact_to_dict(c, db) for c in contacts])
     except Exception as e:
         return returnException(str(e))
 
@@ -90,19 +102,17 @@ def add_contact(
                 PLMCompanyContact.is_primary == 1,
             ).update({"is_primary": 0})
 
-        # Get designation name if it is passed as designation_id
-        designation_name = None
+        # Save designation_id as a string in the designation field
+        designation_val = "Contact Person"
         if data.designation_id:
-            des_rec = db.query(IEMSUserDesignation).filter(IEMSUserDesignation.designation_id == data.designation_id).first()
-            if des_rec:
-                designation_name = des_rec.designation_name
+            designation_val = str(data.designation_id)
 
         contact = PLMCompanyContact(
             company_id=data.company_id,
             name=data.first_name.strip(),
             email=data.email.strip() if data.email else None,
             phone=data.phone.strip() if data.phone else None,
-            designation=designation_name or "Contact Person",
+            designation=designation_val,
             is_primary=data.is_primary if data.is_primary is not None else 0,
             is_active=data.is_active if data.is_active is not None else 1,
             created_at=datetime.now(),
@@ -110,7 +120,7 @@ def add_contact(
         db.add(contact)
         db.commit()
         db.refresh(contact)
-        return returnSuccess(_contact_to_dict(contact))
+        return returnSuccess(_contact_to_dict(contact, db))
     except Exception as e:
         db.rollback()
         return returnException(str(e))
@@ -154,9 +164,7 @@ def update_contact(
         if data.phone is not None:
             contact.phone = data.phone.strip()
         if data.designation_id is not None:
-            des_rec = db.query(IEMSUserDesignation).filter(IEMSUserDesignation.designation_id == data.designation_id).first()
-            if des_rec:
-                contact.designation = des_rec.designation_name
+            contact.designation = str(data.designation_id)
         if data.is_primary is not None:
             contact.is_primary = data.is_primary
         if data.is_active is not None:
@@ -164,7 +172,7 @@ def update_contact(
 
         db.commit()
         db.refresh(contact)
-        return returnSuccess(_contact_to_dict(contact))
+        return returnSuccess(_contact_to_dict(contact, db))
     except Exception as e:
         db.rollback()
         return returnException(str(e))

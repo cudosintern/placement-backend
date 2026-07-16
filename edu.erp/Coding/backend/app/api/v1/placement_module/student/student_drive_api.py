@@ -110,6 +110,27 @@ def _check_eligibility(
     return True, "Eligible"
 
 
+def _promote_waitlisted(db: Session, drive: PlacementDrive):
+    """
+    Finds the top WAITLISTED candidate by CGPA and promotes them to SHORTLISTED.
+    Adjusts drive.shortlisted_count accordingly.
+    """
+    top_waitlisted = (
+        db.query(PLMApplication)
+        .join(PLMStudentProfile, PLMStudentProfile.profile_id == PLMApplication.profile_id)
+        .filter(
+            PLMApplication.drive_id == drive.drive_id,
+            PLMApplication.status == "WAITLISTED",
+        )
+        .order_by(PLMStudentProfile.current_cgpa.desc())
+        .first()
+    )
+    if top_waitlisted:
+        top_waitlisted.status = "SHORTLISTED"
+        drive.shortlisted_count = (drive.shortlisted_count or 0) + 1
+        db.flush()
+
+
 # ===========================================================================
 # 1. POST /apply — Student applies to a drive
 # ===========================================================================
@@ -287,13 +308,14 @@ def withdraw_application(
             return returnException("Application is already withdrawn.")
 
         # Prevent withdrawal if TPO has already acted
-        locked_statuses = {"SHORTLISTED", "IN_PROCESS", "OFFERED"}
+        locked_statuses = {"IN_PROCESS", "OFFERED"}
         if application.status in locked_statuses:
             return returnException(
                 f"Cannot withdraw — application is currently '{application.status}'. "
                 "Please contact the TPO."
             )
 
+        was_shortlisted = (application.status == "SHORTLISTED")
         # Update status
         application.status = "WITHDRAWN"
         db.flush()
@@ -309,6 +331,9 @@ def withdraw_application(
         )
         if drive:
             drive.applied_count = max(0, (drive.applied_count or 1) - 1)
+            if was_shortlisted:
+                drive.shortlisted_count = max(0, (drive.shortlisted_count or 1) - 1)
+                _promote_waitlisted(db, drive)
 
         db.commit()
         db.refresh(application)
