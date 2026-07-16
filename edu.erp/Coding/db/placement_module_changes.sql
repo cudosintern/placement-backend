@@ -902,6 +902,15 @@ ALTER TABLE plm_company_contact
         COMMENT '1 = this contact can be assigned as an interviewer in schedule wizard'
     AFTER is_primary;
 
--- Verification:
---   DESC plm_company_contact;   -- confirm: is_interviewer column present after is_primary
+
 -- =============================================================================
+-- SECTION 9: PLM_APPLICATION ENHANCEMENTS
+-- Date: 2026-07-16
+-- Adds override_reason column to plm_application for override justifications.
+-- Safe: nullable, no existing rows affected.
+-- =============================================================================
+
+ALTER TABLE plm_application
+    ADD COLUMN IF NOT EXISTS override_reason TEXT NULL
+        COMMENT 'Reason/justification provided for manual shortlist/reject overrides';
+
