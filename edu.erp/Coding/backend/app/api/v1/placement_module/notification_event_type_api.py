@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from app.core.database import get_db
 from app.db.placement_models import IEMSPlacementNotificationEventType
@@ -24,14 +25,15 @@ def _event_type_to_dict(event):
 @router.get("/get_event_types")
 def get_event_types(
     current_user: dict = Depends(get_current_user),
-    org_id: int = Header(...),
+    org_id: Optional[int] = Header(None),
     db: Session = Depends(get_db),
 ):
     try:
+        resolved_org = org_id or 1
         events = (
             db.query(IEMSPlacementNotificationEventType)
             .filter(
-                IEMSPlacementNotificationEventType.org_id == org_id,
+                IEMSPlacementNotificationEventType.org_id == resolved_org,
                 IEMSPlacementNotificationEventType.status == 1,
             )
             .all()
@@ -48,7 +50,7 @@ def get_event_types(
 def add_event_type(
     data: NotificationEventTypeCreate,
     current_user: dict = Depends(get_current_user),
-    org_id: int = Header(...),
+    org_id: Optional[int] = Header(None),
     db: Session = Depends(get_db),
 ):
     try:
@@ -58,7 +60,7 @@ def add_event_type(
             event_code=data.event_code,
             event_name=data.event_name,
             status=data.status,
-            org_id=org_id,
+            org_id=org_id or 1,
             created_by=user_id,
             create_date=datetime.now(),
         )

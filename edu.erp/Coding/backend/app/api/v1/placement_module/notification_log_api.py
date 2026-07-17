@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from app.core.database import get_db
 from app.db.placement_models import IEMSPlacementNotificationLog
@@ -24,14 +25,15 @@ def _notification_log_to_dict(log):
 @router.get("/get_notification_logs")
 def get_notification_logs(
     current_user: dict = Depends(get_current_user),
-    org_id: int = Header(...),
+    org_id: Optional[int] = Header(None),
     db: Session = Depends(get_db),
 ):
     try:
+        resolved_org = org_id or 1
         logs = (
             db.query(IEMSPlacementNotificationLog)
             .filter(
-                IEMSPlacementNotificationLog.org_id == org_id,
+                IEMSPlacementNotificationLog.org_id == resolved_org,
                 IEMSPlacementNotificationLog.status == 1,
             )
             .all()

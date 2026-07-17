@@ -20,7 +20,7 @@ from app.core.database import get_db
 from app.utils.auth_helper import get_current_user
 from app.utils.http_return_helper import returnException, returnSuccess
 from app.db.placement_models import PlacementCompany, PlacementDrive, PlacementOffer
-from app.db.models import PLMStudentProfile, IEMStudents
+from app.db.models import PLMStudentProfile, IEMStudents, Country, State, City, IEMSUserDesignation
 from app.api.v1.placement_module.company.company_schema import CompanyCreate, CompanyStatusUpdate
 
 router = APIRouter()
@@ -29,7 +29,44 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Helper: serialize a PlacementCompany ORM object → dict
 # ---------------------------------------------------------------------------
-def _company_to_dict(c: PlacementCompany) -> dict:
+def _company_to_dict(c: PlacementCompany, db: Session) -> dict:
+    country_name = ""
+    state_name = ""
+    city_name = ""
+    designation_name = ""
+
+    if c.country:
+        if c.country.isdigit():
+            c_obj = db.query(Country).filter(Country.country_id == int(c.country)).first()
+            if c_obj:
+                country_name = c_obj.name
+        else:
+            country_name = c.country
+
+    if c.state:
+        if c.state.isdigit():
+            s_obj = db.query(State).filter(State.state_id == int(c.state)).first()
+            if s_obj:
+                state_name = s_obj.name
+        else:
+            state_name = c.state
+
+    if c.city:
+        if c.city.isdigit():
+            ct_obj = db.query(City).filter(City.city_id == int(c.city)).first()
+            if ct_obj:
+                city_name = ct_obj.name
+        else:
+            city_name = c.city
+
+    if c.contact_designation:
+        if c.contact_designation.isdigit():
+            d_obj = db.query(IEMSUserDesignation).filter(IEMSUserDesignation.designation_id == int(c.contact_designation)).first()
+            if d_obj:
+                designation_name = d_obj.designation_name
+        else:
+            designation_name = c.contact_designation
+
     return {
         "company_id": c.company_id,
         "company_name": c.company_name,
@@ -55,6 +92,10 @@ def _company_to_dict(c: PlacementCompany) -> dict:
         "modified_by": c.modified_by,
         "create_date": str(c.create_date) if c.create_date else None,
         "modify_date": str(c.modify_date) if c.modify_date else None,
+        "country_name": country_name,
+        "state_name": state_name,
+        "city_name": city_name,
+        "contact_designation_name": designation_name,
     }
 
 
@@ -89,7 +130,7 @@ def get_company_list(
 
         companies = query.order_by(PlacementCompany.company_name).all()
         print("Companies found:", companies)
-        data = [_company_to_dict(c) for c in companies]
+        data = [_company_to_dict(c, db) for c in companies]
         return returnSuccess(data, message=f"{len(data)} company(ies) found")
     except Exception as e:
         return returnException(str(e))
@@ -153,7 +194,7 @@ def get_company_detail(
                 ]
             })
 
-        company_dict = _company_to_dict(company)
+        company_dict = _company_to_dict(company, db)
         company_dict["drives"] = drives_data
         return returnSuccess(company_dict)
     except Exception as e:
@@ -218,8 +259,24 @@ def add_company(
         db.add(new_company)
         db.commit()
         db.refresh(new_company)
+
+        # Also create a primary contact in plm_company_contact
+        if new_company.contact_person:
+            from app.db.placement_models import PLMCompanyContact
+            primary_contact = PLMCompanyContact(
+                company_id=new_company.company_id,
+                name=new_company.contact_person,
+                designation=new_company.contact_designation,
+                email=new_company.contact_email,
+                phone=new_company.contact_phone,
+                is_primary=1,
+                is_active=1
+            )
+            db.add(primary_contact)
+            db.commit()
+
         return returnSuccess(
-            _company_to_dict(new_company),
+            _company_to_dict(new_company, db),
             message="Company added successfully.",
         )
     except Exception as e:
@@ -292,8 +349,36 @@ def update_company(
 
         db.commit()
         db.refresh(company)
+
+        # Update or create primary contact in plm_company_contact
+        from app.db.placement_models import PLMCompanyContact
+        primary_contact = db.query(PLMCompanyContact).filter(
+            PLMCompanyContact.company_id == company.company_id,
+            PLMCompanyContact.is_primary == 1
+        ).first()
+
+        if primary_contact:
+            primary_contact.name = company.contact_person
+            primary_contact.designation = company.contact_designation
+            primary_contact.email = company.contact_email
+            primary_contact.phone = company.contact_phone
+            db.commit()
+        else:
+            if company.contact_person:
+                primary_contact = PLMCompanyContact(
+                    company_id=company.company_id,
+                    name=company.contact_person,
+                    designation=company.contact_designation,
+                    email=company.contact_email,
+                    phone=company.contact_phone,
+                    is_primary=1,
+                    is_active=1
+                )
+                db.add(primary_contact)
+                db.commit()
+
         return returnSuccess(
-            _company_to_dict(company),
+            _company_to_dict(company, db),
             message="Company updated successfully.",
         )
     except Exception as e:

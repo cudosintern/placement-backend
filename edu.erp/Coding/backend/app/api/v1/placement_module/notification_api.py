@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
@@ -20,13 +21,25 @@ from app.api.v1.placement_module.notification_schema import (
 router = APIRouter()
 
 
-def _notification_to_dict(n):
+def _notification_to_dict(n, db: Session):
+    event_name = ""
+    if n.event_type_id:
+        from app.db.placement_models import IEMSPlacementNotificationEventType
+        event = db.query(IEMSPlacementNotificationEventType).filter(
+            IEMSPlacementNotificationEventType.id == n.event_type_id
+        ).first()
+        if event:
+            event_name = event.event_name
+        else:
+            event_name = str(n.event_type_id)
+
     return {
         "id": n.id,
         "notification_title": n.notification_title,
         "notification_message": n.notification_message,
         "notification_type": n.notification_type,
         "event_type_id": n.event_type_id,
+        "event_type_name": event_name,
         "status": n.status,
     }
 
@@ -36,7 +49,7 @@ def _notification_to_dict(n):
 def add_notification_template(
     data: NotificationCreate,
     current_user: dict = Depends(get_current_user),
-    org_id: int = Header(...),
+    org_id: Optional[int] = Header(None),
     db: Session = Depends(get_db),
 ):
     try:
@@ -48,7 +61,7 @@ def add_notification_template(
             notification_type=data.notification_type,
             event_type_id=data.event_type_id,
             status=data.status,
-            org_id=org_id,
+            org_id=org_id or 1,
             created_by=user_id,
             create_date=datetime.now(),
         )
@@ -58,7 +71,7 @@ def add_notification_template(
         db.refresh(notification)
 
         return returnSuccess(
-            _notification_to_dict(notification)
+            _notification_to_dict(notification, db)
         )
 
     except Exception as e:
@@ -69,21 +82,22 @@ def add_notification_template(
 @router.get("/get_notification_templates")
 def get_notification_templates(
     current_user: dict = Depends(get_current_user),
-    org_id: int = Header(...),
+    org_id: Optional[int] = Header(None),
     db: Session = Depends(get_db),
 ):
     try:
+        resolved_org = org_id or 1
         notifications = (
             db.query(IEMSPlacementNotificationTemplate)
             .filter(
-                IEMSPlacementNotificationTemplate.org_id == org_id,
+                IEMSPlacementNotificationTemplate.org_id == resolved_org,
                 IEMSPlacementNotificationTemplate.status == 1,
             )
             .all()
         )
 
         return returnSuccess(
-            [_notification_to_dict(n) for n in notifications]
+            [_notification_to_dict(n, db) for n in notifications]
         )
     except Exception as e:
         return returnException(str(e))
@@ -130,7 +144,7 @@ def update_notification_template(
         db.refresh(notification)
 
         return returnSuccess(
-            _notification_to_dict(notification)
+            _notification_to_dict(notification, db)
         )
 
     except Exception as e:
