@@ -145,3 +145,12 @@ router.include_router(
     prefix="/placement/offer",
     tags=["Placement - Offer Management"]
 )
+
+# ── Placement - Reports Routes ──────────────────────────────────────────────
+from app.api.v1.placement_module.reports_api import router as reports_router
+
+router.include_router(
+    reports_router,
+    prefix="/placement/reports",
+    tags=["Placement - Reports"]
+)

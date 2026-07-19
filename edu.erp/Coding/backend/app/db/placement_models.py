@@ -298,7 +298,7 @@ class PLMStudentProfile(Base):
     __tablename__ = 'plm_student_profile'
 
     profile_id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(MySQLInteger(unsigned=True), ForeignKey('iems_students.student_id', ondelete='CASCADE'), nullable=False, unique=True)
+    student_id = Column(Integer, ForeignKey('iems_students.student_id', ondelete='CASCADE'), nullable=False, unique=True)
     linkedin_url = Column(String(255), nullable=True)
     github_url = Column(String(255), nullable=True)
     portfolio_url = Column(String(255), nullable=True)
