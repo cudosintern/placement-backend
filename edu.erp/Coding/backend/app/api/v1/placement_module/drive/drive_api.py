@@ -1370,7 +1370,8 @@ def override_shortlist_application(
             return returnException(f"Can only override waitlisted applications (current: {app.status}).")
 
         app.status = "SHORTLISTED"
-        app.override_reason = payload.reason
+        if payload.reason and payload.reason.strip():
+            app.override_reason = payload.reason.strip()
         
         drive = db.query(PlacementDrive).filter(PlacementDrive.drive_id == app.drive_id).first()
         if drive:
@@ -1418,15 +1419,63 @@ def override_reject_application(
         if app.status != "WAITLISTED":
             return returnException(f"Can only reject waitlisted applications via this endpoint (current: {app.status}).")
 
-        app.status = "REJECTED"
-        app.override_reason = payload.reason
+        # Revert to normal waitlist by clearing the override reason/request
+        app.status = "WAITLISTED"
+        app.override_reason = None
         db.commit()
 
         return returnSuccess(
-            {"application_id": app.application_id, "status": "REJECTED"},
-            message="Student override request rejected.",
+            {"application_id": app.application_id, "status": "WAITLISTED"},
+            message="Override request rejected, student reverted to waitlist.",
         )
     except Exception as e:
         db.rollback()
         return returnException(str(e))
+
+
+# ===========================================================================
+# 14. POST /placement/drive/applications/override-request
+# ===========================================================================
+class OverrideRequestPayload(BaseModel):
+    application_id: int
+    reason: str
+
+@router.post("/applications/override-request")
+def override_request_application(
+    payload: OverrideRequestPayload,
+    current_user: dict = Depends(get_current_user),
+    org_id: Optional[int] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Officer requests override for a WAITLISTED student, saving justification/remarks.
+    """
+    try:
+        from app.db.placement_models import PLMApplication
+        
+        app = (
+            db.query(PLMApplication)
+            .filter(PLMApplication.application_id == payload.application_id)
+            .first()
+        )
+        if not app:
+            return returnException(f"Application {payload.application_id} not found.")
+
+        if app.status != "WAITLISTED":
+            return returnException(f"Can only request override for waitlisted applications (current: {app.status}).")
+
+        if not payload.reason.strip():
+            return returnException("Reason is required for override request.")
+
+        app.override_reason = payload.reason.strip()
+        db.commit()
+
+        return returnSuccess(
+            {"application_id": app.application_id, "status": "WAITLISTED"},
+            message="Override request submitted successfully.",
+        )
+    except Exception as e:
+        db.rollback()
+        return returnException(str(e))
+
 

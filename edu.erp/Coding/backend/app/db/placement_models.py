@@ -427,6 +427,7 @@ class PlacementApplication(Base):
     applied_at = Column(DateTime, default=datetime.now)
     status = Column(String(50), nullable=False, default="APPLIED")  # APPLIED, SHORTLISTED, WAITLISTED, IN_PROCESS, OFFERED, REJECTED, WITHDRAWN
     is_eligible = Column(TINYINT, nullable=False, default=1)
+    override_reason = Column(String(500), nullable=True)
 
     # Relationships
     drive = relationship("PlacementDrive", foreign_keys=[drive_id])
