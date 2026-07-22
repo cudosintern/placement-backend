@@ -130,39 +130,63 @@ def get_all_students_list(
     current_user: dict = Depends(get_current_user),
     org_id: int = Header(...),
     db: Session = Depends(get_db),
+    dept_id: Optional[int] = Query(None, description="Filter students by department ID"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    limit: int = Query(50, ge=1, le=200, description="Records per page (max 200)"),
 ):
     """
-    Returns ALL students from iems_students (not just placement-registered ones).
+    Returns students from iems_students with optional department filter and pagination.
     Each row includes:
       - is_registered: bool  — whether they have a plm_student_profile record
       - profile_id, current_cgpa, backlogs, is_placement_eligible from profile (if registered)
       - cgpa_actual from iems_cgpa (academic result)
+    Pagination: use page & limit query params. Returns total_count for UI pagination.
     """
     try:
-        # Fetch all students
-        students = db.query(IEMStudents).filter(
+        # Base query with org + status filter
+        base_query = db.query(IEMStudents).filter(
             IEMStudents.org_id == org_id,
             IEMStudents.status == 1,
-        ).order_by(IEMStudents.name).all()
+        )
 
-        # Build a lookup: student_id -> profile
+        # Apply department filter if provided
+        if dept_id is not None:
+            base_query = base_query.filter(IEMStudents.department_id == dept_id)
+
+        # Total count for pagination UI (before slicing)
+        total_count = base_query.count()
+
+        # Fetch only the requested page
+        offset = (page - 1) * limit
+        students = base_query.order_by(IEMStudents.name).offset(offset).limit(limit).all()
+
+        # Get student_ids of this page only — used to scope profile/cgpa lookups
+        student_ids = [s.student_id for s in students]
+        regnos = [s.regno for s in students]
+
+        # Build a lookup: student_id -> profile (scoped to this page)
         profiles = db.query(PLMStudentProfile).filter(
             PLMStudentProfile.org_id == org_id,
             PLMStudentProfile.status == 1,
+            PLMStudentProfile.student_id.in_(student_ids),
         ).all()
         profile_map = {p.student_id: p for p in profiles}
 
-        # Build a lookup: regno -> cgpa (take the max result_year record)
+        # Build a lookup: regno -> cgpa (scoped to this page, latest result_year)
         cgpa_rows = db.query(IEMSCGPA).filter(
             IEMSCGPA.org_id == org_id,
+            IEMSCGPA.regno.in_(regnos),
         ).order_by(IEMSCGPA.result_year.desc()).all()
         cgpa_map: dict = {}
         for c in cgpa_rows:
             if c.regno not in cgpa_map:
                 cgpa_map[c.regno] = float(c.cgpa) if c.cgpa is not None else None
 
-        # Build a lookup: dept_id -> dept_name
-        depts = db.query(IEMSDepartment).all()
+        # Build a lookup: dept_id -> dept_name (only depts relevant to this page)
+        dept_ids_on_page = list({s.department_id for s in students if s.department_id})
+        depts = db.query(IEMSDepartment).filter(
+            IEMSDepartment.dept_id.in_(dept_ids_on_page)
+        ).all()
         dept_map = {d.dept_id: d.dept_name for d in depts}
 
         result = []
@@ -170,25 +194,31 @@ def get_all_students_list(
             p = profile_map.get(s.student_id)
             cgpa_actual = cgpa_map.get(s.regno)
             result.append({
-                "student_id":           s.student_id,
-                "name":                 s.name,
-                "usno":                 s.usno,
-                "regno":                s.regno,
-                "email":                s.email,
-                "department_id":        s.department_id,
-                "department_name":      dept_map.get(s.department_id) if s.department_id else None,
-                "is_registered":        p is not None,
+                "student_id":            s.student_id,
+                "name":                  s.name,
+                "usno":                  s.usno,
+                "regno":                 s.regno,
+                "email":                 s.email,
+                "department_id":         s.department_id,
+                "department_name":       dept_map.get(s.department_id) if s.department_id else None,
+                "is_registered":         p is not None,
                 # Placement profile fields (None if not registered)
-                "profile_id":           p.profile_id if p else None,
-                "current_cgpa":         float(p.current_cgpa) if p and p.current_cgpa is not None else None,
-                "backlogs":             p.backlogs if p else None,
+                "profile_id":            p.profile_id if p else None,
+                "current_cgpa":          float(p.current_cgpa) if p and p.current_cgpa is not None else None,
+                "backlogs":              p.backlogs if p else None,
                 "is_placement_eligible": p.is_placement_eligible if p else None,
-                "status":               p.status if p else None,
+                "status":                p.status if p else None,
                 # CGPA from academic result system (read-only, pre-fills registration)
-                "cgpa_actual":          cgpa_actual,
+                "cgpa_actual":           cgpa_actual,
             })
 
-        return returnSuccess(result)
+        return returnSuccess({
+            "students": result,
+            "total_count": total_count,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_count + limit - 1) // limit,
+        })
     except Exception as e:
         return returnException(str(e))
 
