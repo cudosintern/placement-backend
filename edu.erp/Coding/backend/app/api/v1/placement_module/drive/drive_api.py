@@ -830,11 +830,12 @@ def get_drive_applications(
             .all()
         )
 
-        # Fetch active resumes in bulk
-        profile_ids = [row[1].profile_id for row in rows]
+        # Fetch current active resumes in bulk for all applicant profiles
+        profile_ids = list({profile.profile_id for _, profile, _, _ in rows})
         resume_map: dict = {}
+
         if profile_ids:
-            resumes = (
+            active_resumes = (
                 db.query(PLMStudentResume)
                 .filter(
                     PLMStudentResume.profile_id.in_(profile_ids),
@@ -843,8 +844,24 @@ def get_drive_applications(
                 )
                 .all()
             )
-            for r in resumes:
+            for r in active_resumes:
                 resume_map[r.profile_id] = {"resume_id": r.resume_id, "file_path": r.file_path}
+
+        # Fallback for profiles without an active resume flag: check latest uploaded resume
+        missing_profile_ids = [p_id for p_id in profile_ids if p_id not in resume_map]
+        if missing_profile_ids:
+            fallback_resumes = (
+                db.query(PLMStudentResume)
+                .filter(
+                    PLMStudentResume.profile_id.in_(missing_profile_ids),
+                    PLMStudentResume.status == 1,
+                )
+                .order_by(PLMStudentResume.resume_id.desc())
+                .all()
+            )
+            for r in fallback_resumes:
+                if r.profile_id not in resume_map:
+                    resume_map[r.profile_id] = {"resume_id": r.resume_id, "file_path": r.file_path}
 
         applicants = []
         for app, profile, student, dept in rows:
