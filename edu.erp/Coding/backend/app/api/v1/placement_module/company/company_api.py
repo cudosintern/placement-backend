@@ -20,7 +20,7 @@ from app.core.database import get_db
 from app.utils.auth_helper import get_current_user
 from app.utils.http_return_helper import returnException, returnSuccess
 from app.db.placement_models import PlacementCompany, PlacementDrive, PlacementOffer
-from app.db.models import PLMStudentProfile, IEMStudents, Country, State, City, IEMSUserDesignation
+from app.db.models import PLMStudentProfile, IEMStudents, Country, State, City, IEMSUserDesignation, PLMCompanyContact
 from app.api.v1.placement_module.company.company_schema import CompanyCreate, CompanyStatusUpdate
 
 router = APIRouter()
@@ -34,6 +34,24 @@ def _company_to_dict(c: PlacementCompany, db: Session) -> dict:
     state_name = ""
     city_name = ""
     designation_name = ""
+
+    # Fetch primary contact from plm_company_contact to display in grid
+    contact_person = c.contact_person
+    contact_designation = c.contact_designation
+    contact_phone = c.contact_phone
+    contact_email = c.contact_email
+
+    primary_contact = db.query(PLMCompanyContact).filter(
+        PLMCompanyContact.company_id == c.company_id,
+        PLMCompanyContact.is_primary == 1,
+        PLMCompanyContact.is_active == 1
+    ).first()
+
+    if primary_contact:
+        contact_person = primary_contact.name
+        contact_designation = primary_contact.designation
+        contact_phone = primary_contact.phone
+        contact_email = primary_contact.email
 
     if c.country:
         if c.country.isdigit():
@@ -59,13 +77,15 @@ def _company_to_dict(c: PlacementCompany, db: Session) -> dict:
         else:
             city_name = c.city
 
-    if c.contact_designation:
-        if c.contact_designation.isdigit():
-            d_obj = db.query(IEMSUserDesignation).filter(IEMSUserDesignation.designation_id == int(c.contact_designation)).first()
+    # Resolve designation name based on contact_designation
+    target_desg = contact_designation
+    if target_desg:
+        if target_desg.isdigit():
+            d_obj = db.query(IEMSUserDesignation).filter(IEMSUserDesignation.designation_id == int(target_desg)).first()
             if d_obj:
                 designation_name = d_obj.designation_name
         else:
-            designation_name = c.contact_designation
+            designation_name = target_desg
 
     return {
         "company_id": c.company_id,
@@ -80,10 +100,10 @@ def _company_to_dict(c: PlacementCompany, db: Session) -> dict:
         "state": c.state,
         "country": c.country,
         "pincode": c.pincode,
-        "contact_person": c.contact_person,
-        "contact_designation": c.contact_designation,
-        "contact_phone": c.contact_phone,
-        "contact_email": c.contact_email,
+        "contact_person": contact_person,
+        "contact_designation": contact_designation,
+        "contact_phone": contact_phone,
+        "contact_email": contact_email,
         "description": c.description,
         "logo_path": c.logo_path,
         "status": c.status,
