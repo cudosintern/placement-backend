@@ -182,9 +182,6 @@ def delete_contact(
         if not contact:
             return returnException("Contact not found.")
         
-        if contact.is_active == 1:
-            return returnException("Active contacts cannot be deleted.")
-
         db.delete(contact)
         db.commit()
 
