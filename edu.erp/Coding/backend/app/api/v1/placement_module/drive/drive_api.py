@@ -830,42 +830,58 @@ def get_drive_applications(
             .all()
         )
 
-        # Fetch current active resumes in bulk for all applicant profiles
-        profile_ids = list({profile.profile_id for _, profile, _, _ in rows})
-        resume_map: dict = {}
+        # Bulk fetch resumes by the resume_id stored in plm_application
+        app_resume_ids = list({app.resume_id for app, _, _, _ in rows if app.resume_id})
+        resume_map_by_id: dict = {}
+        if app_resume_ids:
+            resumes = (
+                db.query(PLMStudentResume)
+                .filter(
+                    PLMStudentResume.resume_id.in_(app_resume_ids),
+                    PLMStudentResume.status == 1,
+                )
+                .all()
+            )
+            for r in resumes:
+                resume_map_by_id[r.resume_id] = {"resume_id": r.resume_id, "file_path": r.file_path}
 
-        if profile_ids:
+        # Fallback for legacy applications where app.resume_id was not captured: check active or latest resume by profile_id
+        missing_profile_ids = list({
+            profile.profile_id for app, profile, _, _ in rows
+            if not app.resume_id or app.resume_id not in resume_map_by_id
+        })
+        fallback_map: dict = {}
+        if missing_profile_ids:
             active_resumes = (
                 db.query(PLMStudentResume)
                 .filter(
-                    PLMStudentResume.profile_id.in_(profile_ids),
+                    PLMStudentResume.profile_id.in_(missing_profile_ids),
                     PLMStudentResume.is_active == 1,
                     PLMStudentResume.status == 1,
                 )
                 .all()
             )
             for r in active_resumes:
-                resume_map[r.profile_id] = {"resume_id": r.resume_id, "file_path": r.file_path}
+                fallback_map[r.profile_id] = {"resume_id": r.resume_id, "file_path": r.file_path}
 
-        # Fallback for profiles without an active resume flag: check latest uploaded resume
-        missing_profile_ids = [p_id for p_id in profile_ids if p_id not in resume_map]
-        if missing_profile_ids:
-            fallback_resumes = (
-                db.query(PLMStudentResume)
-                .filter(
-                    PLMStudentResume.profile_id.in_(missing_profile_ids),
-                    PLMStudentResume.status == 1,
+            still_missing = [p_id for p_id in missing_profile_ids if p_id not in fallback_map]
+            if still_missing:
+                latest_resumes = (
+                    db.query(PLMStudentResume)
+                    .filter(
+                        PLMStudentResume.profile_id.in_(still_missing),
+                        PLMStudentResume.status == 1,
+                    )
+                    .order_by(PLMStudentResume.resume_id.desc())
+                    .all()
                 )
-                .order_by(PLMStudentResume.resume_id.desc())
-                .all()
-            )
-            for r in fallback_resumes:
-                if r.profile_id not in resume_map:
-                    resume_map[r.profile_id] = {"resume_id": r.resume_id, "file_path": r.file_path}
+                for r in latest_resumes:
+                    if r.profile_id not in fallback_map:
+                        fallback_map[r.profile_id] = {"resume_id": r.resume_id, "file_path": r.file_path}
 
         applicants = []
         for app, profile, student, dept in rows:
-            resume_info = resume_map.get(profile.profile_id)
+            resume_info = resume_map_by_id.get(app.resume_id) if app.resume_id else fallback_map.get(profile.profile_id)
             applicants.append({
                 "application_id": app.application_id,
                 "profile_id": app.profile_id,
