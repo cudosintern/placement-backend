@@ -275,6 +275,9 @@ def get_drive_list(
     batch_year: Optional[int] = Query(
         None, description="Filter by eligible batch year, e.g. 2025"
     ),
+    for_student: bool = Query(
+        False, description="When True, filter drives by application start and deadline dates for student view"
+    ),
     current_user: dict = Depends(get_current_user),
     org_id: Optional[int] = Header(None),
     db: Session = Depends(get_db),
@@ -317,6 +320,17 @@ def get_drive_list(
                     .filter(PlacementDriveEligibleBranch.batch_year == batch_year)
                     .subquery()
                 )
+            )
+        if for_student:
+            from datetime import date
+            today = date.today()
+            # Student view: Application open date (application_start) must be <= today or NULL
+            query = query.filter(
+                (PlacementDrive.application_start == None) | (PlacementDrive.application_start <= today)
+            )
+            # Application deadline must be >= today or NULL
+            query = query.filter(
+                (PlacementDrive.application_deadline == None) | (PlacementDrive.application_deadline >= today)
             )
 
         rows = query.order_by(PlacementDrive.create_date.desc()).all()
@@ -838,7 +852,6 @@ def get_drive_applications(
                 db.query(PLMStudentResume)
                 .filter(
                     PLMStudentResume.resume_id.in_(app_resume_ids),
-                    PLMStudentResume.status == 1,
                 )
                 .all()
             )
@@ -1207,13 +1220,6 @@ def auto_shortlist_applications(
             .scalar()
             or 0
         )
-
-        if not is_unlimited and applied_count <= vacancy:
-            return returnException(
-                f"Auto-shortlisting requires more applicants than vacancies. "
-                f"Applied: {applied_count}, Vacancy: {vacancy}. "
-                f"When applied ≤ vacancy, you can shortlist all directly."
-            )
 
         # 3. Get eligible branch dept_ids for this drive
         eligible_dept_ids = [
