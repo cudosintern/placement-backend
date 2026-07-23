@@ -107,6 +107,10 @@ def _check_eligibility(
         if student.department_id not in dept_ids:
             return False, "Your branch/department is not eligible for this drive."
 
+    # 5. Semester completion check (must have completed 5th semester, i.e., current_semester >= 6)
+    if student.current_semester is not None and student.current_semester < 6:
+        return False, "Only students who have completed 5th semester (6th semester onwards) are eligible to apply."
+
     return True, "Eligible"
 
 
@@ -147,7 +151,7 @@ def apply_to_drive(
 
     - Validates drive is ACTIVE (status == 2).
     - Validates student has a placement profile (plm_student_profile).
-    - Checks eligibility (CGPA, backlogs, branch).
+    - Checks eligibility (CGPA, backlogs, branch, 5th sem completion).
     - Inserts a row into plm_application.
     - Increments plm_drive.applied_count.
     - Prevents duplicate applications (unique on drive_id + profile_id).
@@ -196,6 +200,8 @@ def apply_to_drive(
 
         # ── 4. Eligibility check ───────────────────────────────────────────
         eligible, reason = _check_eligibility(db, drive, student, profile, resolved_org)
+        if not eligible:
+            return returnException(reason)
 
         # ── 5. Check for existing application ─────────────────────────────
         existing = (
@@ -227,19 +233,23 @@ def apply_to_drive(
                 f"You have already applied for this drive (status: {existing.status})."
             )
 
-        # ── 6. Optionally validate resume belongs to this profile ──────────
-        if payload.resume_id:
-            resume = (
-                db.query(PLMStudentResume)
-                .filter(
-                    PLMStudentResume.resume_id == payload.resume_id,
-                    PLMStudentResume.profile_id == payload.profile_id,
-                    PLMStudentResume.status == 1,
-                )
-                .first()
+        # ── 6. Validate resume belongs to this profile ────────────────────
+        if not payload.resume_id:
+            return returnException(
+                "A resume is required to apply. Please upload and activate your resume in your Student Profile."
             )
-            if not resume:
-                return returnException("Resume not found or does not belong to this profile.")
+
+        resume = (
+            db.query(PLMStudentResume)
+            .filter(
+                PLMStudentResume.resume_id == payload.resume_id,
+                PLMStudentResume.profile_id == payload.profile_id,
+                PLMStudentResume.status == 1,
+            )
+            .first()
+        )
+        if not resume:
+            return returnException("Resume not found or does not belong to this profile.")
 
         # ── 7. Insert application ──────────────────────────────────────────
         application = PLMApplication(

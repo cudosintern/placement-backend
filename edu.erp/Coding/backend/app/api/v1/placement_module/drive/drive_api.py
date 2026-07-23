@@ -161,7 +161,7 @@ def _compute_eligible_count(
                     IEMStudents.org_id == org_id,
                     IEMStudents.status == 1,
                     IEMStudents.department_id == dept_id,
-                    IEMSAcademicBatch.start_year == batch_year,
+                    IEMSAcademicBatch.academic_year.like(f"{batch_year}%"),
                 )
                 .all()
             )
@@ -216,16 +216,28 @@ def get_drive_meta(
             .all()
         )
 
-        # Distinct batch years (from iems_academic_batch.start_year)
+        # Distinct batch years (from iems_academic_batch.academic_year)
         batch_year_rows = (
-            db.query(distinct(IEMSAcademicBatch.start_year))
+            db.query(distinct(IEMSAcademicBatch.academic_year))
             .filter(
                 IEMSAcademicBatch.status == 1,
                 IEMSAcademicBatch.org_id == resolved_org,
             )
-            .order_by(IEMSAcademicBatch.start_year)
+            .order_by(IEMSAcademicBatch.academic_year)
             .all()
         )
+
+        batch_years = []
+        for row in batch_year_rows:
+            val = row[0]
+            if val:
+                import re
+                match = re.search(r'\d{4}', str(val))
+                if match:
+                    year_int = int(match.group(0))
+                    if year_int not in batch_years:
+                        batch_years.append(year_int)
+        batch_years.sort(reverse=True)
 
         data = {
             "companies": [
@@ -244,7 +256,7 @@ def get_drive_meta(
                 }
                 for d in departments
             ],
-            "batch_years": [row[0] for row in batch_year_rows if row[0]],
+            "batch_years": batch_years,
             "drive_types": DRIVE_TYPES,
             "work_types": WORK_TYPES,
             "round_types": ROUND_TYPES,
@@ -274,6 +286,9 @@ def get_drive_list(
     tier: Optional[int] = Query(None, description="1 | 2 | 3"),
     batch_year: Optional[int] = Query(
         None, description="Filter by eligible batch year, e.g. 2025"
+    ),
+    for_student: bool = Query(
+        False, description="When True, filter drives by application start and deadline dates for student view"
     ),
     current_user: dict = Depends(get_current_user),
     org_id: Optional[int] = Header(None),
@@ -317,6 +332,17 @@ def get_drive_list(
                     .filter(PlacementDriveEligibleBranch.batch_year == batch_year)
                     .subquery()
                 )
+            )
+        if for_student:
+            from datetime import date
+            today = date.today()
+            # Student view: Application open date (application_start) must be <= today or NULL
+            query = query.filter(
+                (PlacementDrive.application_start == None) | (PlacementDrive.application_start <= today)
+            )
+            # Application deadline must be >= today or NULL
+            query = query.filter(
+                (PlacementDrive.application_deadline == None) | (PlacementDrive.application_deadline >= today)
             )
 
         rows = query.order_by(PlacementDrive.create_date.desc()).all()
@@ -830,25 +856,57 @@ def get_drive_applications(
             .all()
         )
 
-        # Fetch active resumes in bulk
-        profile_ids = [row[1].profile_id for row in rows]
-        resume_map: dict = {}
-        if profile_ids:
+        # Bulk fetch resumes by the resume_id stored in plm_application
+        app_resume_ids = list({app.resume_id for app, _, _, _ in rows if app.resume_id})
+        resume_map_by_id: dict = {}
+        if app_resume_ids:
             resumes = (
                 db.query(PLMStudentResume)
                 .filter(
-                    PLMStudentResume.profile_id.in_(profile_ids),
+                    PLMStudentResume.resume_id.in_(app_resume_ids),
+                )
+                .all()
+            )
+            for r in resumes:
+                resume_map_by_id[r.resume_id] = {"resume_id": r.resume_id, "file_path": r.file_path}
+
+        # Fallback for legacy applications where app.resume_id was not captured: check active or latest resume by profile_id
+        missing_profile_ids = list({
+            profile.profile_id for app, profile, _, _ in rows
+            if not app.resume_id or app.resume_id not in resume_map_by_id
+        })
+        fallback_map: dict = {}
+        if missing_profile_ids:
+            active_resumes = (
+                db.query(PLMStudentResume)
+                .filter(
+                    PLMStudentResume.profile_id.in_(missing_profile_ids),
                     PLMStudentResume.is_active == 1,
                     PLMStudentResume.status == 1,
                 )
                 .all()
             )
-            for r in resumes:
-                resume_map[r.profile_id] = {"resume_id": r.resume_id, "file_path": r.file_path}
+            for r in active_resumes:
+                fallback_map[r.profile_id] = {"resume_id": r.resume_id, "file_path": r.file_path}
+
+            still_missing = [p_id for p_id in missing_profile_ids if p_id not in fallback_map]
+            if still_missing:
+                latest_resumes = (
+                    db.query(PLMStudentResume)
+                    .filter(
+                        PLMStudentResume.profile_id.in_(still_missing),
+                        PLMStudentResume.status == 1,
+                    )
+                    .order_by(PLMStudentResume.resume_id.desc())
+                    .all()
+                )
+                for r in latest_resumes:
+                    if r.profile_id not in fallback_map:
+                        fallback_map[r.profile_id] = {"resume_id": r.resume_id, "file_path": r.file_path}
 
         applicants = []
         for app, profile, student, dept in rows:
-            resume_info = resume_map.get(profile.profile_id)
+            resume_info = resume_map_by_id.get(app.resume_id) if app.resume_id else fallback_map.get(profile.profile_id)
             applicants.append({
                 "application_id": app.application_id,
                 "profile_id": app.profile_id,
@@ -1175,13 +1233,6 @@ def auto_shortlist_applications(
             or 0
         )
 
-        if not is_unlimited and applied_count <= vacancy:
-            return returnException(
-                f"Auto-shortlisting requires more applicants than vacancies. "
-                f"Applied: {applied_count}, Vacancy: {vacancy}. "
-                f"When applied ≤ vacancy, you can shortlist all directly."
-            )
-
         # 3. Get eligible branch dept_ids for this drive
         eligible_dept_ids = [
             row.dept_id
@@ -1370,7 +1421,8 @@ def override_shortlist_application(
             return returnException(f"Can only override waitlisted applications (current: {app.status}).")
 
         app.status = "SHORTLISTED"
-        app.override_reason = payload.reason
+        if payload.reason and payload.reason.strip():
+            app.override_reason = payload.reason.strip()
         
         drive = db.query(PlacementDrive).filter(PlacementDrive.drive_id == app.drive_id).first()
         if drive:
@@ -1418,15 +1470,63 @@ def override_reject_application(
         if app.status != "WAITLISTED":
             return returnException(f"Can only reject waitlisted applications via this endpoint (current: {app.status}).")
 
-        app.status = "REJECTED"
-        app.override_reason = payload.reason
+        # Revert to normal waitlist by clearing the override reason/request
+        app.status = "WAITLISTED"
+        app.override_reason = None
         db.commit()
 
         return returnSuccess(
-            {"application_id": app.application_id, "status": "REJECTED"},
-            message="Student override request rejected.",
+            {"application_id": app.application_id, "status": "WAITLISTED"},
+            message="Override request rejected, student reverted to waitlist.",
         )
     except Exception as e:
         db.rollback()
         return returnException(str(e))
+
+
+# ===========================================================================
+# 14. POST /placement/drive/applications/override-request
+# ===========================================================================
+class OverrideRequestPayload(BaseModel):
+    application_id: int
+    reason: str
+
+@router.post("/applications/override-request")
+def override_request_application(
+    payload: OverrideRequestPayload,
+    current_user: dict = Depends(get_current_user),
+    org_id: Optional[int] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Officer requests override for a WAITLISTED student, saving justification/remarks.
+    """
+    try:
+        from app.db.placement_models import PLMApplication
+        
+        app = (
+            db.query(PLMApplication)
+            .filter(PLMApplication.application_id == payload.application_id)
+            .first()
+        )
+        if not app:
+            return returnException(f"Application {payload.application_id} not found.")
+
+        if app.status != "WAITLISTED":
+            return returnException(f"Can only request override for waitlisted applications (current: {app.status}).")
+
+        if not payload.reason.strip():
+            return returnException("Reason is required for override request.")
+
+        app.override_reason = payload.reason.strip()
+        db.commit()
+
+        return returnSuccess(
+            {"application_id": app.application_id, "status": "WAITLISTED"},
+            message="Override request submitted successfully.",
+        )
+    except Exception as e:
+        db.rollback()
+        return returnException(str(e))
+
 
