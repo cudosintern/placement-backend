@@ -144,6 +144,7 @@ router.include_router(
     offer_router,
     prefix="/placement/offer",
     tags=["Placement - Offer Management"]
+)
 # ── Placement - Interview Management ─────────────────────────────────────────
 from app.api.v1.placement_module.interview.interview_api import (
     router as interview_router,
