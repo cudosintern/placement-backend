@@ -19,8 +19,9 @@ Run once after deploying the fix:
 """
 
 import sys, os
-sys.path.insert(0, r'c:\Placement Module\placement-backend\edu.erp\Coding\backend')
-os.chdir(r'c:\Placement Module\placement-backend\edu.erp\Coding\backend')
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, current_dir)
+os.chdir(current_dir)
 
 from dotenv import load_dotenv
 load_dotenv('.env')
