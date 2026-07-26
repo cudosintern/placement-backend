@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.db.placement_models import PLMStudentResume, PLMStudentProfile
+from app.db.placement_models import PLMStudentResume, PLMStudentProfile, PLMApplication, PlacementDrive
 from app.utils.auth_helper import get_current_user
 from app.utils.http_return_helper import returnException, returnSuccess
 
@@ -35,11 +35,13 @@ UPLOAD_BASE = os.path.join(
 UPLOAD_BASE = os.path.normpath(UPLOAD_BASE)
 os.makedirs(UPLOAD_BASE, exist_ok=True)
 
-MAX_FILE_SIZE_MB = 5
 ALLOWED_CONTENT_TYPES = {"application/pdf"}
+MAX_FILE_SIZE_MB = 5
 
 
-# ─── Helper ──────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Helper
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def _resume_to_dict(r: PLMStudentResume) -> dict:
     return {
@@ -52,8 +54,7 @@ def _resume_to_dict(r: PLMStudentResume) -> dict:
         "file_size_kb": r.file_size_kb,
         "is_active":    r.is_active,
         "status":       r.status,
-        "created_date": r.created_date,
-        "modified_date": r.modified_date,
+        "created_date": r.created_date.isoformat() if r.created_date else None,
     }
 
 
@@ -63,9 +64,9 @@ def _resume_to_dict(r: PLMStudentResume) -> dict:
 
 @router.post("/upload_resume")
 async def upload_resume(
-    profile_id: int = Form(..., description="Placement profile ID"),
-    student_id: int = Form(..., description="Student ID"),
-    file: UploadFile = File(..., description="PDF resume file (max 5 MB)"),
+    profile_id: int = Query(..., description="Student Profile ID"),
+    student_id: int = Query(..., description="Student ID"),
+    file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
     org_id: int = Header(...),
     db: Session = Depends(get_db),
@@ -92,8 +93,35 @@ async def upload_resume(
         if size_kb > MAX_FILE_SIZE_MB * 1024:
             return returnException(f"File size exceeds {MAX_FILE_SIZE_MB} MB limit.")
 
-        # ── Save file with UUID name ─────────────────────────────────────────
         original_name = file.filename or "resume.pdf"
+
+        # ── Check for duplicate filename (replace existing matching resume) ──
+        dup_resume = db.query(PLMStudentResume).filter(
+            PLMStudentResume.student_id == student_id,
+            PLMStudentResume.org_id == org_id,
+            PLMStudentResume.status == 1,
+            PLMStudentResume.file_name.ilike(original_name),
+        ).first()
+
+        if dup_resume:
+            # Overwrite duplicate filename entry by marking old one inactive/deleted
+            dup_resume.status = 0
+            dup_resume.is_active = 0
+            dup_resume.modified_by = user_id
+            dup_resume.modified_date = datetime.now()
+            db.flush()
+
+        # ── Quota check: max 5 active resumes per student ───────────────────
+        active_count = db.query(PLMStudentResume).filter(
+            PLMStudentResume.student_id == student_id,
+            PLMStudentResume.org_id == org_id,
+            PLMStudentResume.status == 1,
+        ).count()
+
+        if active_count >= 5:
+            return returnException("Maximum limit of 5 resumes reached. Please delete an existing resume before uploading a new one.")
+
+        # ── Save file with UUID name ─────────────────────────────────────────
         unique_name   = f"{uuid.uuid4().hex}_{original_name}"
         dest_path     = os.path.join(UPLOAD_BASE, unique_name)
 
@@ -235,6 +263,24 @@ def delete_resume(
         if not resume:
             return returnException("Resume not found.")
 
+        # Check if linked to any active placement application
+        ACTIVE_APPLICATION_STATUSES = {"APPLIED", "SHORTLISTED", "WAITLISTED", "IN_PROCESS", "OFFERED"}
+        linked_app = (
+            db.query(PLMApplication, PlacementDrive)
+            .join(PlacementDrive, PlacementDrive.drive_id == PLMApplication.drive_id)
+            .filter(
+                PLMApplication.resume_id == resume_id,
+                PLMApplication.status.in_(ACTIVE_APPLICATION_STATUSES),
+            )
+            .first()
+        )
+        if linked_app:
+            app_obj, drive_obj = linked_app
+            drive_name = drive_obj.drive_name if drive_obj else "an active drive"
+            return returnException(
+                f"Cannot delete resume: It is attached to your active application for '{drive_name}' (Status: {app_obj.status})."
+            )
+
         resume.status = 0
         resume.is_active = 0
         resume.modified_by = user_id
@@ -262,7 +308,6 @@ def download_resume(
         resume = db.query(PLMStudentResume).filter(
             PLMStudentResume.resume_id == resume_id,
             PLMStudentResume.org_id == org_id,
-            PLMStudentResume.status == 1,
         ).first()
         if not resume:
             raise HTTPException(status_code=404, detail="Resume not found.")

@@ -3,7 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import outerjoin
+from sqlalchemy import outerjoin, or_
 
 from app.core.database import get_db
 from app.db.models import IEMStudents, IEMSCGPA, IEMSDepartment
@@ -162,7 +162,8 @@ def get_all_students_list(
 
         # Get student_ids of this page only — used to scope profile/cgpa lookups
         student_ids = [s.student_id for s in students]
-        regnos = [s.regno for s in students]
+        regnos = [s.regno for s in students if s.regno]
+        usnos = [s.usno for s in students if s.usno]
 
         # Build a lookup: student_id -> profile (scoped to this page)
         profiles = db.query(PLMStudentProfile).filter(
@@ -172,14 +173,14 @@ def get_all_students_list(
         ).all()
         profile_map = {p.student_id: p for p in profiles}
 
-        # Build a lookup: regno -> cgpa (scoped to this page, latest result_year)
+        # Build a lookup: regno / usno -> cgpa (scoped to this page, latest result_year)
         cgpa_rows = db.query(IEMSCGPA).filter(
             IEMSCGPA.org_id == org_id,
-            IEMSCGPA.regno.in_(regnos),
+            or_(IEMSCGPA.regno.in_(regnos), IEMSCGPA.regno.in_(usnos)),
         ).order_by(IEMSCGPA.result_year.desc()).all()
         cgpa_map: dict = {}
         for c in cgpa_rows:
-            if c.regno not in cgpa_map:
+            if c.regno and c.regno not in cgpa_map:
                 cgpa_map[c.regno] = float(c.cgpa) if c.cgpa is not None else None
 
         # Build a lookup: dept_id -> dept_name (only depts relevant to this page)
@@ -192,7 +193,7 @@ def get_all_students_list(
         result = []
         for s in students:
             p = profile_map.get(s.student_id)
-            cgpa_actual = cgpa_map.get(s.regno)
+            cgpa_actual = cgpa_map.get(s.regno) if s.regno in cgpa_map else cgpa_map.get(s.usno)
             result.append({
                 "student_id":            s.student_id,
                 "name":                  s.name,

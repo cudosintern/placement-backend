@@ -161,7 +161,7 @@ def _compute_eligible_count(
                     IEMStudents.org_id == org_id,
                     IEMStudents.status == 1,
                     IEMStudents.department_id == dept_id,
-                    IEMSAcademicBatch.start_year == batch_year,
+                    IEMSAcademicBatch.academic_year.like(f"{batch_year}%"),
                 )
                 .all()
             )
@@ -216,16 +216,28 @@ def get_drive_meta(
             .all()
         )
 
-        # Distinct batch years (from iems_academic_batch.start_year)
+        # Distinct batch years (from iems_academic_batch.academic_year)
         batch_year_rows = (
-            db.query(distinct(IEMSAcademicBatch.start_year))
+            db.query(distinct(IEMSAcademicBatch.academic_year))
             .filter(
                 IEMSAcademicBatch.status == 1,
                 IEMSAcademicBatch.org_id == resolved_org,
             )
-            .order_by(IEMSAcademicBatch.start_year)
+            .order_by(IEMSAcademicBatch.academic_year)
             .all()
         )
+
+        batch_years = []
+        for row in batch_year_rows:
+            val = row[0]
+            if val:
+                import re
+                match = re.search(r'\d{4}', str(val))
+                if match:
+                    year_int = int(match.group(0))
+                    if year_int not in batch_years:
+                        batch_years.append(year_int)
+        batch_years.sort(reverse=True)
 
         data = {
             "companies": [
@@ -244,7 +256,7 @@ def get_drive_meta(
                 }
                 for d in departments
             ],
-            "batch_years": [row[0] for row in batch_year_rows if row[0]],
+            "batch_years": batch_years,
             "drive_types": DRIVE_TYPES,
             "work_types": WORK_TYPES,
             "round_types": ROUND_TYPES,
@@ -274,6 +286,9 @@ def get_drive_list(
     tier: Optional[int] = Query(None, description="1 | 2 | 3"),
     batch_year: Optional[int] = Query(
         None, description="Filter by eligible batch year, e.g. 2025"
+    ),
+    for_student: bool = Query(
+        False, description="When True, filter drives by application start and deadline dates for student view"
     ),
     current_user: dict = Depends(get_current_user),
     org_id: Optional[int] = Header(None),
@@ -317,6 +332,17 @@ def get_drive_list(
                     .filter(PlacementDriveEligibleBranch.batch_year == batch_year)
                     .subquery()
                 )
+            )
+        if for_student:
+            from datetime import date
+            today = date.today()
+            # Student view: Application open date (application_start) must be <= today or NULL
+            query = query.filter(
+                (PlacementDrive.application_start == None) | (PlacementDrive.application_start <= today)
+            )
+            # Application deadline must be >= today or NULL
+            query = query.filter(
+                (PlacementDrive.application_deadline == None) | (PlacementDrive.application_deadline >= today)
             )
 
         rows = query.order_by(PlacementDrive.create_date.desc()).all()
@@ -838,7 +864,6 @@ def get_drive_applications(
                 db.query(PLMStudentResume)
                 .filter(
                     PLMStudentResume.resume_id.in_(app_resume_ids),
-                    PLMStudentResume.status == 1,
                 )
                 .all()
             )
@@ -1207,13 +1232,6 @@ def auto_shortlist_applications(
             .scalar()
             or 0
         )
-
-        if not is_unlimited and applied_count <= vacancy:
-            return returnException(
-                f"Auto-shortlisting requires more applicants than vacancies. "
-                f"Applied: {applied_count}, Vacancy: {vacancy}. "
-                f"When applied ≤ vacancy, you can shortlist all directly."
-            )
 
         # 3. Get eligible branch dept_ids for this drive
         eligible_dept_ids = [
