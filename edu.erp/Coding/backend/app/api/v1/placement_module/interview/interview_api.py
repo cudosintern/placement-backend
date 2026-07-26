@@ -149,7 +149,7 @@ def get_interview_meta(
             )
             .filter(
                 PlacementDrive.org_id == resolved_org,
-                PlacementDrive.status.in_([1, 2]),  # Scheduled or Active
+                PlacementDrive.status.in_([1, 2, 3]),  # Scheduled, Active, or Completed
             )
             .order_by(PlacementDrive.create_date.desc())
             .all()
