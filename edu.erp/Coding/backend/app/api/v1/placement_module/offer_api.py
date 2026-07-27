@@ -64,9 +64,12 @@ def handle_offer_status_change(db: Session, profile_id: int, old_status: str, ne
     student = db.query(IEMStudents).filter(IEMStudents.student_id == profile.student_id).first()
     batch_year = None
     if student and student.academic_batch_id:
-        batch = db.query(IEMSAcademicBatch).filter(IEMSAcademicBatch.academic_batch_id == student.academic_batch_id).first()
-        if batch:
-            batch_year = batch.start_year
+        # batch = db.query(IEMSAcademicBatch).filter(IEMSAcademicBatch.academic_batch_id == student.academic_batch_id).first()
+        batch_year = (
+            db.query(IEMSAcademicBatch.academic_year)
+            .filter(IEMSAcademicBatch.academic_batch_id == student.academic_batch_id)
+            .scalar()
+        )
 
     if batch_year:
         policy = db.query(PlacementOfferCapPolicy).filter(
